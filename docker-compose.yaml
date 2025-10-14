@@ -1,0 +1,257 @@
+name: r2ps-dev
+
+services:
+
+  r2ps-demo-client:
+    image: rhsm-client
+    ports:
+      - "9000:8080"
+      - "9002:8000"
+    restart: on-failure
+    volumes:
+      - ./r2ps-demo-client/resources:/resources
+      - ./r2ps-demo-client/demo:/demo
+    env_file: .env
+    environment:
+      SPRING_CONFIG_ADDITIONAL_LOCATION: /config/
+      SPRING_PROFILES_ACTIVE: demo
+      RPS_OPS_CLIENT_SERVER_URL: http://r2ps-rest-api:8088
+      SERVER_PORT: 8080
+      SERVER_SSL_ENABLED: "false"
+      TZ: "Europe/Stockholm"
+    networks:
+      - wallet-network
+
+  r2ps-rest-api:
+    build:
+      context: .
+      dockerfile: ./r2ps-rest-api/Containerfile
+    ports:
+      - "8088:8088"
+      - "9012:8000"
+    restart: on-failure
+    depends_on:
+      kafka-1:
+        condition: service_healthy
+      kafka-2:
+        condition: service_healthy
+      kafka-3:
+        condition: service_healthy
+    environment:
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: "kafka-1:19092,kafka-2:19092,kafka-3:19092"
+      SPRING_DATA_REDIS_HOST: "valkey"
+      SPRING_DATA_REDIS_PORT: 6379
+      SPRING_DATA_REDIS_USERNAME: "default"
+      SPRING_DATA_REDIS_PASSWORD: "secret"
+      SPRING_DATA_REDIS_DATABASE: 0
+      TZ: "Europe/Stockholm"
+    env_file: .env
+    networks:
+      - wallet-network
+
+  r2ps-worker:
+    profiles:
+      - old-java
+    build:
+      context: .
+      dockerfile: ./r2ps-worker/Containerfile
+    ports:
+      - "9020:8443"
+      - "9022:8000"
+    restart: on-failure
+    depends_on:
+      kafka-1:
+        condition: service_healthy
+      kafka-2:
+        condition: service_healthy
+      kafka-3:
+        condition: service_healthy
+    volumes:
+      - ./r2ps-worker/target/test-data:/target/test-data
+      - ./demo:/demo
+      - ./filestorage:/app/filestorage
+      - ./foo:/app/foo
+    env_file: .env
+    environment:
+      SERVER_PORT: 8099
+      #SPRING_CONFIG_ADDITIONAL_LOCATION: /config/
+      SPRING_PROFILES_ACTIVE: hsm,demo
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: "kafka:29092"
+      SPRING_KAFKA_BOOTSTRAP-SERVERS: "kafka:29092"
+      SPRING_DATA_REDIS_HOST: "valkey"
+      SPRING_DATA_REDIS_PORT: 6379
+      SPRING_DATA_REDIS_USERNAME: "default"
+      SPRING_DATA_REDIS_PASSWORD: "secret"
+      SPRING_DATA_REDIS_DATABASE: 0
+      SPRING_DATASOURCE_URL: jdbc:postgresql://db:5432/wallet
+      SPRING_DATASOURCE_USERNAME: walletuser
+      SPRING_DATASOURCE_PASSWORD: s3cret
+      RPS_OPS_CLIENT_REGISTRY_INIT_DIRECTORY: /app/filestorage/dev
+      TZ: "Europe/Stockholm"
+    networks:
+      - wallet-network
+
+  rust-r2ps-worker:
+    build:
+      context: ./rust-r2ps-worker
+      dockerfile: Containerfile
+    environment:
+      RUST_LOG: info
+      BOOTSTRAP_SERVERS: "kafka-1:19092,kafka-2:19092,kafka-3:19092"
+      CLIENT_PUBLIC_KEY: LS0tLS1CRUdJTiBQVUJMSUMgS0VZLS0tLS0KTUZrd0V3WUhLb1pJemowQ0FRWUlLb1pJemowREFRY0RRZ0FFMjMzWWFVbmlYcEV1TlkxNVp5Sm1xaSt0NFZ0SApFMEJzRnlNNmZNV3ZMNHh0ZGlEN3U4dTJlVFpsV3NLL1hyWVBDb2JFUlViUGFLVUo5VytsMTlDV1VBPT0KLS0tLS1FTkQgUFVCTElDIEtFWS0tLS0tCg==
+      SERVER_PUBLIC_KEY: LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0tCk1JSUJVekNCKzZBREFnRUNBaFJzaUxSdEhYcFVSaWYwWGZ5SDZUU3hzTkQ3eFRBS0JnZ3Foa2pPUFFRREFqQVoKTVJjd0ZRWURWUVFEREE1SVUwMHRjMlZ5ZG1WeUxXdGxlVEFlRncweU5UQTNNVFV3T0RRNE16aGFGdzB6TlRBMwpNVFV3T0RRNE16aGFNQmt4RnpBVkJnTlZCQU1NRGtoVFRTMXpaWEoyWlhJdGEyVjVNRmt3RXdZSEtvWkl6ajBDCkFRWUlLb1pJemowREFRY0RRZ0FFcHpReHVYTGVpUHl6aXRNS1FiVVNWT0QzQXhiK2w5THFWanM1R25ZYW5BMWsKNEFtTVVUb1dwSVR3NVhYTTQ4TlBoYmdNaG9NMEZVcDRPUTI2ei92Q1FhTWhNQjh3SFFZRFZSME9CQllFRk5vKwppRFlNZW5ZSXZFanNpRDJuT3VDK1UvSHBNQW9HQ0NxR1NNNDlCQU1DQTBjQU1FUUNJRnFOOXRuRzlwNnd1S1RxCmhzNitJRFhVZHFTK0p4Y1ZTbVI0MXhOOGVwR3VBaUJIL0RqQngxSUl4ZlF1ajI0OGlqRytoa2dZcENJbmpLM0wKeWRLbkg2WVpuQT09Ci0tLS0tRU5EIENFUlRJRklDQVRFLS0tLS0K
+      SERVER_PRIVATE_KEY: LS0tLS1CRUdJTiBQUklWQVRFIEtFWS0tLS0tCk1JR0hBZ0VBTUJNR0J5cUdTTTQ5QWdFR0NDcUdTTTQ5QXdFSEJHMHdhd0lCQVFRZy9OSUlkUkdPK3FVMmJqeFQKdG5adUM0NWdBZzZ3WjBVR2U5bkNlTTd3YzB5aFJBTkNBQVNuTkRHNWN0NkkvTE9LMHdwQnRSSlU0UGNERnY2WAowdXBXT3prYWRocWNEV1RnQ1l4Uk9oYWtoUERsZGN6ancwK0Z1QXlHZ3pRVlNuZzVEYnJQKzhKQgotLS0tLUVORCBQUklWQVRFIEtFWS0tLS0t
+      PKCS11_SLOT: 0
+      USER_PIN: 123456
+      SO_PIN: ""
+    depends_on:
+      kafka-1:
+        condition: service_healthy
+      kafka-2:
+        condition: service_healthy
+      kafka-3:
+        condition: service_healthy
+    networks:
+      - wallet-network
+
+  valkey:
+    image: valkey/valkey:8.0.2-alpine3.21
+    ports:
+      - 6379:6379
+    command: [ "valkey-server", "/usr/local/etc/valkey/valkey.conf" ]
+    volumes:
+      - ./config/valkey.conf:/usr/local/etc/valkey/valkey.conf
+    networks:
+      - wallet-network
+
+  x-kafka-common: &kafka-common
+    image: apache/kafka-native:latest
+    environment: &kafka-env
+      KAFKA_CLUSTER_ID: NjM0OUVDRTItMTg2Ni00QU
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,EXTERNAL:PLAINTEXT
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka-1:9093,2@kafka-2:9093,3@kafka-3:9093
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 3
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 3
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 2
+      KAFKA_DEFAULT_REPLICATION_FACTOR: 3
+      KAFKA_MIN_INSYNC_REPLICAS: 2
+      KAFKA_LOG_DIRS: /tmp/kraft-combined-logs
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: 'false'
+
+  kafka-1:
+    <<: *kafka-common
+    container_name: kafka-1
+    ports:
+      - "9092:9092"
+    environment:
+      <<: *kafka-env
+      KAFKA_NODE_ID: 1
+      KAFKA_LISTENERS: PLAINTEXT://:19092,CONTROLLER://:9093,EXTERNAL://:9092
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka-1:19092,EXTERNAL://localhost:9092
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z localhost 19092 || exit 1"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+      start_period: 60s
+    networks:
+      - wallet-network
+
+  kafka-2:
+    <<: *kafka-common
+    container_name: kafka-2
+    ports:
+      - "9093:9092"
+    environment:
+      <<: *kafka-env
+      KAFKA_NODE_ID: 2
+      KAFKA_LISTENERS: PLAINTEXT://:19092,CONTROLLER://:9093,EXTERNAL://:9092
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka-2:19092,EXTERNAL://localhost:9093
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z localhost 19092 || exit 1"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+      start_period: 60s
+    networks:
+      - wallet-network
+  kafka-3:
+    <<: *kafka-common
+    container_name: kafka-3
+    ports:
+      - "9094:9092"
+    environment:
+      <<: *kafka-env
+      KAFKA_NODE_ID: 3
+      KAFKA_LISTENERS: PLAINTEXT://:19092,CONTROLLER://:9093,EXTERNAL://:9092
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka-3:19092,EXTERNAL://localhost:9094
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z localhost 19092 || exit 1"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+      start_period: 60s
+    networks:
+      - wallet-network
+
+  init-kafka:
+    image: apache/kafka:latest
+    depends_on:
+      kafka-1:
+        condition: service_healthy
+      kafka-2:
+        condition: service_healthy
+      kafka-3:
+        condition: service_healthy
+    entrypoint: ["/bin/sh", "-e", "/tmp/init-kafka-topics.sh"]
+    volumes:
+      - ./config/init-kafka-topics.sh:/tmp/init-kafka-topics.sh
+
+    networks:
+      - wallet-network
+  # Optional: Kafka UI for management
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    depends_on:
+      kafka-1:
+        condition: service_healthy
+      kafka-2:
+        condition: service_healthy
+      kafka-3:
+        condition: service_healthy
+    ports:
+      - "8080:8080"
+    environment:
+      KAFKA_CLUSTERS_0_NAME: wallet-local
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka-1:19092,kafka-2:19092,kafka-3:19092
+    networks:
+      - wallet-network
+  db:
+    image: postgres
+    restart: always
+    # set shared memory limit when using docker compose
+    shm_size: 128mb
+    # or set shared memory limit when deploy via swarm stack
+    #volumes:
+    #  - type: tmpfs
+    #    target: /dev/shm
+    #    tmpfs:
+    #      size: 134217728 # 128*2^20 bytes = 128Mb
+    environment:
+      POSTGRES_PASSWORD: s3cret
+      POSTGRES_DB: wallet
+      POSTGRES_USER: walletuser
+    ports:
+      - "5432:5432"
+    networks:
+      - wallet-network
+
+#volumes:
+#  kafka-data:
+#    driver: local
+
+networks:
+  wallet-network:
+    driver: bridge
