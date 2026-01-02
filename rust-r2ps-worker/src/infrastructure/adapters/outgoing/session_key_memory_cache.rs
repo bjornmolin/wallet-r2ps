@@ -53,9 +53,7 @@ impl SessionKeySpiPort for SessionKeyMemoryCache {
         &self,
         pake_session_id: &str,
     ) -> Result<(), crate::application::session_key_spi_port::ClientRepositoryError> {
-        match self.cache.remove(pake_session_id) {
-            None => Ok(()),
-            Some(_) => Ok(()),
-        }
+        self.cache.invalidate(pake_session_id);
+        Ok(())
     }
 }

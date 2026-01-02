@@ -57,20 +57,11 @@ impl ClientRepositorySpiPort for ClientRepositoryMemoryCache {
 
     fn add_key(&self, client_id: &str, key: &HsmKey) -> Result<(), ClientRepositoryError> {
         // TODO race condition - just for demo
-        match self.client_metadata(client_id) {
-            None => Ok(()),
-            Some(metadata) => {
-                let new_metadata = ClientMetadata {
-                    keys: {
-                        let mut new_keys = metadata.keys.clone();
-                        new_keys.push(key.clone());
-                        new_keys
-                    },
-                    ..metadata
-                };
-                self.store_metadata(new_metadata)?;
-                Ok(())
-            }
-        }
+        let mut metadata = self
+            .client_metadata(client_id)
+            .ok_or(ClientRepositoryError::NotFound)?;
+        metadata.keys.push(key.clone());
+        self.store_metadata(metadata)?;
+        Ok(())
     }
 }
