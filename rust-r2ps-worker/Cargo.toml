@@ -1,0 +1,64 @@
+[package]
+name = "rust-r2ps-worker"
+version = "0.1.0"
+edition = "2024"
+default-run = "rust-r2ps-worker"
+
+[lib]
+name = "rust_r2ps_worker"
+path = "src/lib.rs"
+
+[[bin]]
+name = "generate_openapi"
+path = "src/generate_openapi.rs"
+
+[[bin]]
+name = "setup_demo_data"
+path = "src/setup_demo_data.rs"
+
+
+[[bin]]
+name = "rust-r2ps-worker"
+path = "src/main.rs"
+
+[dependencies]
+rdkafka = { version = "0.38.0", features = ["cmake-build"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+jws = { version="0.2.9" }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+ctrlc = {  version="3.4", features = ["termination"] }
+dotenvy = "0.15.7"
+dotenv_config="0.2.2"
+dotenv_codegen="0.15.0"
+foyer = "0.20"
+moka = { version = "0.12", features = ["sync"] }
+strum_macros = "0.27.2"
+cryptoki="0.10.0"
+opaque-ke = { git = "https://github.com/facebook/opaque-ke", features = ["std"]} #, rev = "6d2af37a" }
+rand = "0.8"
+sha2 = "0.10.9"
+josekit = "0.10.3"
+base64 = "0.22.1"
+p256 = { version = "0.13", default-features = false, features = [
+    "ecdsa",
+    "hash2curve",
+    "pkcs8",
+    "voprf",
+    "pem",
+    "ecdh",
+] }
+elliptic-curve = { version = "0.13", features = ["sec1"] }
+jsonwebtoken = "9"
+pem = "3"
+der = "0.7.10"
+argon2 = { version = "0.5", features = ["std"] }
+hmac = "0.12"
+generic-array = "0.14"
+chrono = "0.4.42"
+uuid = { version = "1.18.1", features = ["v4", "serde"] }
+digest = "0.10.7"
+hex = "0.4.3"
+utoipa = { version = "5", features = ["uuid"] }
+ring = "0.17.14"
