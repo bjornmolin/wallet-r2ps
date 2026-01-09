@@ -105,12 +105,8 @@ services:
       USER_PIN: 123456
       SO_PIN: ""
     depends_on:
-      kafka-1:
-        condition: service_healthy
-      kafka-2:
-        condition: service_healthy
-      kafka-3:
-        condition: service_healthy
+      init-kafka:
+        condition: service_completed_successfully
     networks:
       - wallet-network
 
