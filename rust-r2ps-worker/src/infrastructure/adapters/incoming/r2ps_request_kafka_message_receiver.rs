@@ -26,21 +26,16 @@ impl R2psRequestKafkaMessageReceiver {
         }
     }
 
-    pub fn start_worker_thread(&self, config: KafkaConfig) -> JoinHandle<()> {
-        let bootstrap_servers = String::from(config.bootstrap_servers);
-        let broker_address_family = String::from(config.broker_address_family);
-        let group_id = String::from(config.group_id);
-        let group_instance_id = String::from(config.group_instance_id); // todo
-
+    pub fn start_worker_thread(&self, config: Arc<KafkaConfig>) -> JoinHandle<()> {
         let r2ps_service = self.r2ps_service.clone();
         let running = self.running.clone();
 
         spawn(move || {
             let consumer: BaseConsumer = ClientConfig::new()
-                .set("bootstrap.servers", &bootstrap_servers)
-                .set("broker.address.family", &broker_address_family)
-                .set("group.id", &group_id)
-                .set("group.instance.id", &group_instance_id)
+                .set("bootstrap.servers", &config.bootstrap_servers)
+                .set("broker.address.family", &config.broker_address_family)
+                .set("group.id", &config.group_id)
+                .set("group.instance.id", &config.group_instance_id)
                 // Cooperative-sticky combines two concepts: sticky assignment
                 // (minimizing partition movement) and cooperative
                 // rebalancing (incremental, non-blocking rebalances).

@@ -10,5 +10,6 @@ pub trait ClientRepositorySpiPort {
 #[derive(Debug)]
 pub enum ClientRepositoryError {
     ConnectionError,
+    NotFound,
     // TODO
 }

@@ -27,10 +27,10 @@ impl R2psResponseSpiPort for R2psResponseKafkaMessageSender {
     fn send(&self, r2ps_response: R2PsResponse) -> Result<(), R2psResponseError> {
         let response = match serde_json::to_string(&r2ps_response) {
             Ok(output_json) => {
-                let key = r2ps_response.wallet_id;
-                let request_id = r2ps_response.request_id.clone();
+                let key = &r2ps_response.wallet_id;
+                let request_id = &r2ps_response.request_id;
                 let record = BaseRecord::to("r2ps-responses")
-                    .key(&key)
+                    .key(key)
                     .payload(&output_json);
 
                 match self.producer.send(record) {
