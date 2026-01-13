@@ -715,7 +715,7 @@ impl R2psRequestUseCase for R2psService {
         };
 
         let jws =
-            jws_with_jwk(&jwe, service_request.nonce).map_err(|_| R2psRequestError::JwsError)?;
+            jws_with_jwk(&jwe, service_request.nonce, service_request.service_type.encrypt_option()).map_err(|_| R2psRequestError::JwsError)?;
 
         info!(
             "JWS response payload on {:?} {}",
@@ -829,13 +829,22 @@ fn encrypt_with_ec_jwk(
     Ok(jwe)
 }
 
-fn jws_with_jwk(data: &str, nonce: Option<String>) -> Result<String, ServiceRequestError> {
-    let now = Utc::now(); // Get duration in ms since Unix epoch
+impl EncryptOption {
+    fn as_str(&self) -> &'static str {
+        match self {
+            EncryptOption::User => "user",
+            EncryptOption::Device => "device",
+        }
+    }
+}
+
+fn jws_with_jwk(data: &str, nonce: Option<String>, enc: EncryptOption) ->  Result<String, ServiceRequestError>  {
+    let now = Utc::now();    // Get duration in ms since Unix epoch
     let claims = Claims {
         ver: "1.0".to_string(),
         nonce: nonce.unwrap().to_string(),
         iat: now.timestamp(),
-        enc: "device".to_string(),
+        enc: enc.as_str().to_string(),
         data: STANDARD.encode(data),
     };
     let mut header = Header::new(Algorithm::ES256);

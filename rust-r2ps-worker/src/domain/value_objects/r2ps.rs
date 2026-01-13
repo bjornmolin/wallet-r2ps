@@ -36,7 +36,7 @@ pub struct ServiceRequest {
     pub version: Option<String>,
     pub nonce: Option<String>,
     pub iat: Option<i64>,
-    pub enc: Option<String>,
+    pub enc: Option<EncryptOption>,
     #[serde(rename = "data")]
     pub service_data: Option<String>,
 }
@@ -63,6 +63,8 @@ pub enum ServiceTypeId {
     Info,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum EncryptOption {
     User,
     Device,
