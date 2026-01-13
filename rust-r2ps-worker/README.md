@@ -8,7 +8,7 @@ Install rust toolchain from [rustup](https://rustup.rs/).
 
 Start the ecosystem with docker compose and stop the rust-r2ps-worker by running:
 ```bash
-docker compose up 
+docker compose up
 docker compose down rust-r2ps-worker
 ```
 
@@ -21,7 +21,7 @@ apt-get update && apt-get install -y \
     cmake \
     libssl-dev \
     libsasl2-dev \
-    libzstd-dev 
+    libzstd-dev
 ```
 ### OSX
 ```bash
@@ -30,10 +30,17 @@ brew install \
     cmake \
     openssl \
     cyrus-sasl \
-    zstd
+    zstd \
+    softhsm
 ```
 
 Then build and run the rust-r2ps-worker with:
 ```bash
 cargo run
+```
+
+First time, you will need to initialise SoftHSM:
+
+```bash
+softhsm2-util --init-token --slot 0 --label "wallet-keys" --so-pin "1938456231" --pin "123456"
 ```
