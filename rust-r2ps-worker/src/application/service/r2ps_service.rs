@@ -305,7 +305,7 @@ impl R2psService {
 
                 match serde_json::to_vec(&pake_response) {
                     Ok(payload_vec) => Ok(payload_vec),
-                    Err(e) => Err(ServiceRequestError::Unknown),
+                    Err(_e) => Err(ServiceRequestError::Unknown),
                 }
             }
             PakeState::Finalize => {
@@ -330,7 +330,7 @@ impl R2psService {
                 let result = server_login
                     .finish(
                         CredentialFinalization::deserialize(&decoded_request_data)
-                            .map_err(|e| ServiceRequestError::InvalidAuthenticateRequest)?,
+                            .map_err(|_e| ServiceRequestError::InvalidAuthenticateRequest)?,
                         server_login_parameters,
                     )
                     .map_err(|e| {
@@ -342,7 +342,7 @@ impl R2psService {
 
                 self.session_key_spi_port
                     .store(&pake_session_id, &result.session_key.to_vec())
-                    .map_err(|e| ServiceRequestError::InternalServerError)?;
+                    .map_err(|_e| ServiceRequestError::InternalServerError)?;
 
                 let msg = br#"{"msg":"OK"}"#.to_vec();
                 let pake_response = PakeResponsePayload {
@@ -473,7 +473,7 @@ impl R2psService {
 
                 match serde_json::to_vec(&pake_response) {
                     Ok(payload_vec) => Ok(payload_vec),
-                    Err(e) => Err(ServiceRequestError::Unknown),
+                    Err(_e) => Err(ServiceRequestError::Unknown),
                 }
             }
         }
@@ -485,7 +485,7 @@ impl R2psService {
         device_id: &str,
     ) -> Result<Vec<u8>, ServiceRequestError> {
         let payload = serde_json::from_slice::<SignRequest>(&decrypted_payload)
-            .map_err(|e| ServiceRequestError::InvalidServiceRequestFormat)?;
+            .map_err(|_e| ServiceRequestError::InvalidServiceRequestFormat)?;
         let metadata = self
             .client_repository_spi_port
             .client_metadata(device_id)
@@ -514,7 +514,7 @@ impl R2psService {
         device_id: &str,
     ) -> Result<Vec<u8>, ServiceRequestError> {
         let payload = serde_json::from_slice::<CreateKeyServiceData>(&decrypted_payload)
-            .map_err(|e| ServiceRequestError::InvalidServiceRequestFormat)?;
+            .map_err(|_e| ServiceRequestError::InvalidServiceRequestFormat)?;
 
         let key = self
             .hsm_spi_port
@@ -780,7 +780,7 @@ fn decrypt_service_data_jwe(
                                         &decoded_string,
                                         &decrypter,
                                     ) {
-                                        Ok((payload, header)) => {
+                                        Ok((payload, _header)) => {
                                             info!(
                                                 "decrypted JWS payload: {}",
                                                 hex::encode(&payload)
@@ -796,17 +796,17 @@ fn decrypt_service_data_jwe(
                                             };
                                             Ok(payload.to_vec())
                                         }
-                                        Err(error) => Err(ServiceRequestError::Unknown),
+                                        Err(_error) => Err(ServiceRequestError::Unknown),
                                     }
                                 }
-                                Err(error) => Err(ServiceRequestError::Unknown),
+                                Err(_error) => Err(ServiceRequestError::Unknown),
                             },
                             _ => Err(ServiceRequestError::JweError),
                         }
                     }
-                    Err(error) => Err(ServiceRequestError::Unknown),
+                    Err(_error) => Err(ServiceRequestError::Unknown),
                 },
-                Err(error) => Err(ServiceRequestError::Unknown),
+                Err(_error) => Err(ServiceRequestError::Unknown),
             }
         }
         None => Err(ServiceRequestError::Unknown),
