@@ -5,6 +5,7 @@ use josekit::jwe::JweHeader;
 use p256::SecretKey;
 use p256::pkcs8::{EncodePrivateKey, EncodePublicKey};
 use rust_r2ps_worker::application::service::r2ps_service::decrypt_service_data_jwe;
+use rust_r2ps_worker::domain::EncryptOption::User;
 use rust_r2ps_worker::domain::ServiceRequestError;
 use rust_r2ps_worker::domain::value_objects::r2ps::{ServiceRequest, ServiceTypeId};
 
@@ -42,7 +43,7 @@ fn test_decrypt_service_data_jwe_happy_path() -> Result<(), Box<dyn std::error::
         version: None,
         nonce: None,
         iat: None,
-        enc: Some("ECDH-ES".to_string()),
+        enc: Some(User),
         service_data: Some(BASE64_STANDARD.encode(jwe_compact)),
     };
 
@@ -85,7 +86,7 @@ fn test_decrypt_service_data_jwe_rejects_invalid_formats() -> Result<(), Box<dyn
             version: None,
             nonce: None,
             iat: None,
-            enc: Some("ECDH-ES".to_string()),
+            enc: Some(User),
             service_data: Some(BASE64_STANDARD.encode(invalid_jwe)),
         };
 
@@ -114,7 +115,7 @@ fn test_decrypt_service_data_jwe_rejects_invalid_base64() -> Result<(), Box<dyn 
         version: None,
         nonce: None,
         iat: None,
-        enc: Some("ECDH-ES".to_string()),
+        enc: Some(User),
         service_data: Some(BASE64_STANDARD.encode("not-base64!!".to_string())),
     };
 
