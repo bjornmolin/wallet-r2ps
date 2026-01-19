@@ -1,5 +1,5 @@
 use crate::application::hsm_spi_port::HsmSpiPort;
-use crate::domain::Curve;
+use crate::domain::{Curve, EcPublicJwk, HsmKey};
 use base64::Engine;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use cryptoki::context::{CInitializeArgs, Pkcs11};
@@ -12,14 +12,10 @@ use cryptoki::types::AuthPin;
 use der::Decode;
 use der::asn1::OctetStringRef;
 use digest::Digest;
-use elliptic_curve::pkcs8::EncodePublicKey;
 use p256::ecdsa::VerifyingKey;
-use serde::{Deserialize, Serialize};
-use sha2::Sha256;
 use std::env;
 use std::sync::Arc;
 use tracing::{info, warn};
-use uuid::Uuid;
 
 pub struct HsmWrapper {
     pkcs11: Arc<Pkcs11>,
@@ -27,15 +23,6 @@ pub struct HsmWrapper {
     so_pin: Option<AuthPin>,
     user_pin: Option<AuthPin>,
     wrap_key_alias: Vec<u8>,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct HsmKey {
-    pub wrapped_private_key: Vec<u8>,
-    pub public_key_pem: String,
-    pub kid: String,
-    pub curve_name: Curve,
-    pub creation_time: chrono::DateTime<chrono::Utc>,
 }
 
 #[derive(Debug)]
@@ -200,28 +187,56 @@ impl HsmWrapper {
         )
     }
 
-    pub fn get_ec_public_key(
+    pub fn create_ec_public_key_jwk(
         &self,
         session: &Session,
         public_key: ObjectHandle,
-    ) -> Result<String, Box<dyn std::error::Error>> {
+        curve: &Curve,
+    ) -> Result<EcPublicJwk, Box<dyn std::error::Error>> {
         let attrs = session.get_attributes(public_key, &[AttributeType::EcPoint])?;
 
-        for attr in attrs {
-            if let Attribute::EcPoint(point) = attr {
-                let octet_string = OctetStringRef::from_der(&point).map_err(|e| e.to_string())?;
-
-                let verifying_key = VerifyingKey::from_sec1_bytes(octet_string.as_bytes())
-                    .map_err(|e| e.to_string())?;
-                let pem = verifying_key
-                    .to_public_key_pem(Default::default())
-                    .map_err(|e| e.to_string())?;
-
-                return Ok(pem);
-            }
+        match attrs.first() {
+            Some(Attribute::EcPoint(point)) => Self::ec_point_to_jwk(curve, point),
+            _ => Err("EC point not found".into()),
         }
+    }
 
-        Err("EC point not found".into())
+    fn ec_point_to_jwk(
+        curve: &Curve,
+        point: &[u8],
+    ) -> Result<EcPublicJwk, Box<dyn std::error::Error>> {
+        let octet_string = OctetStringRef::from_der(point).map_err(|e| e.to_string())?;
+
+        let verifying_key =
+            VerifyingKey::from_sec1_bytes(octet_string.as_bytes()).map_err(|e| e.to_string())?;
+
+        let ec_point = verifying_key.to_encoded_point(false);
+        let x = ec_point.x().ok_or("X coordinate not found")?;
+        let y = ec_point.y().ok_or("Y coordinate not found")?;
+
+        let x_b64 = URL_SAFE_NO_PAD.encode(x);
+        let y_b64 = URL_SAFE_NO_PAD.encode(y);
+
+        let kid = Self::generate_kid(curve, &x_b64, &y_b64);
+
+        Ok(EcPublicJwk {
+            crv: curve.to_string(),
+            kty: "EC".to_string(),
+            x: x_b64,
+            y: y_b64,
+            kid,
+        })
+    }
+
+    fn generate_kid(curve: &Curve, x_b64: &String, y_b64: &String) -> String {
+        let thumbprint = format!(
+            r#"{{"crv":"{}","kty":"EC","x":"{}","y":"{}"}}"#,
+            curve, x_b64, y_b64
+        );
+
+        let mut hasher = sha2::Sha256::new();
+        hasher.update(thumbprint.as_bytes());
+        URL_SAFE_NO_PAD.encode(hasher.finalize())
     }
 }
 
@@ -242,8 +257,7 @@ impl HsmSpiPort for HsmWrapper {
         )?;
 
         let wrapped_private_key = self.wrap_private_key(&session, ec_private_key)?;
-
-        let public_key_pem = self.get_ec_public_key(&session, ec_public_key)?;
+        let public_key_jwk = self.create_ec_public_key_jwk(&session, ec_public_key, curve)?;
 
         session.close();
         println!(
@@ -254,9 +268,8 @@ impl HsmSpiPort for HsmWrapper {
 
         Ok(HsmKey {
             wrapped_private_key,
-            public_key_pem: public_key_pem.clone(),
-            kid: Uuid::new_v4().to_string(),
-            curve_name: Curve::P256,
+            public_key_jwk,
+            curve_name: curve.clone(),
             creation_time: chrono::Utc::now(),
         })
     }
@@ -277,24 +290,35 @@ impl Drop for HsmWrapper {
     }
 }
 
-impl HsmKey {
-    pub fn new(wrapped_private_key: Vec<u8>, public_key_pem: String) -> Result<HsmKey, Error> {
-        Ok(HsmKey {
-            wrapped_private_key,
-            public_key_pem,
-            kid: uuid::Uuid::new_v4().to_string(),
-            curve_name: Curve::P256,
-            creation_time: Default::default(),
-        })
+#[cfg(test)]
+mod tests {
+    use crate::domain::Curve;
+    use crate::infrastructure::hsm_wrapper::HsmWrapper;
+    use p256::ecdsa::SigningKey;
+    use rand::rngs::OsRng;
+
+    // Verify that the EcPublicJwk generated is a valid JWK according to JOSE.
+    #[test]
+    pub fn test_ec_point_to_jwk() -> Result<(), Box<dyn std::error::Error>> {
+        let signing_key = SigningKey::random(&mut OsRng);
+        let verifying_key = signing_key.verifying_key();
+        let encoded_point = verifying_key.to_encoded_point(false);
+        let sec1_bytes = encoded_point.as_bytes();
+        let mut der_encoded = vec![0x04, sec1_bytes.len() as u8];
+        der_encoded.extend_from_slice(sec1_bytes);
+
+        let jwk = HsmWrapper::ec_point_to_jwk(&Curve::P256, &der_encoded)?;
+
+        let json_output = serde_json::to_string(&jwk)?;
+        let jose_jwk = josekit::jwk::Jwk::from_bytes(json_output.as_bytes())?;
+
+        assert_eq!(jose_jwk.key_type(), "EC");
+        assert_eq!(
+            jose_jwk.parameter("crv").unwrap().as_str().unwrap(),
+            "P-256"
+        );
+        assert_eq!(jose_jwk.parameter("x").unwrap().as_str().unwrap(), &jwk.x);
+        assert_eq!(jose_jwk.parameter("y").unwrap().as_str().unwrap(), &jwk.y);
+        Ok(())
     }
-}
-
-fn kid_from_pem(pem_bytes: &[u8]) -> String {
-    // SHA-256 thumbprint of the DER-encoded public key
-    let mut hasher = Sha256::new();
-    hasher.update(pem_bytes); // or the actual DER bytes
-    let hash = hasher.finalize();
-
-    // Base64url encode (common for JWK thumbprints)
-    URL_SAFE_NO_PAD.encode(&hash[..16]) // truncate or use full hash
 }

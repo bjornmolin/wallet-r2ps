@@ -440,7 +440,7 @@ impl R2psService {
                 .state
                 .keys
                 .into_iter()
-                .filter(|key| key.kid != payload.kid)
+                .filter(|key| key.public_key_jwk.kid != payload.kid)
                 .collect(),
         };
 
@@ -464,7 +464,7 @@ impl R2psService {
             .state
             .keys
             .iter()
-            .find(|key| key.kid.eq(&sign_request.kid))
+            .find(|key| key.public_key_jwk.kid.eq(&sign_request.kid))
             .cloned()
             .ok_or(ServiceRequestError::UnknownKey)?;
 
@@ -492,15 +492,13 @@ impl R2psService {
         let payload = serde_json::from_slice::<CreateKeyServiceData>(&data)
             .map_err(|_| ServiceRequestError::InvalidServiceRequestFormat)?;
 
-        let key = self
+        let hsm_key = self
             .hsm_spi_port
             .generate_key("foobar", &payload.curve)
             .map_err(|_| ServiceRequestError::Unknown)?;
 
-        // TODO ändra protokollet så att t.ex. id och publik nyckel returneras???
-
         let mut new_keys = r2ps_request.state.keys.clone();
-        new_keys.push(key.clone());
+        new_keys.push(hsm_key.clone());
 
         let new_state = DeviceHsmState {
             client_id: r2ps_request.state.client_id,
@@ -513,7 +511,7 @@ impl R2psService {
         Ok(R2psResponse {
             state: new_state,
             payload: ServiceResponse::CreateKey(CreateKeyServiceDataResponse {
-                created_key: key.curve_name,
+                public_key: hsm_key.public_key_jwk,
             }),
         })
     }
@@ -530,15 +528,8 @@ impl R2psService {
                 .keys
                 .iter()
                 .map(|key| KeyInfo {
-                    kid: key.kid.clone(),
-                    public_key: key
-                        .public_key_pem
-                        .lines()
-                        .filter(|line| !line.starts_with("-----"))
-                        .collect::<Vec<_>>()
-                        .join(""),
-                    curve_name: key.curve_name.clone(),
-                    creation_time: Some(key.creation_time.timestamp()),
+                    public_key: key.public_key_jwk.clone(),
+                    creation_time: Some(key.creation_time.timestamp_millis()),
                 })
                 .collect(),
         };
@@ -617,7 +608,6 @@ impl R2psService {
         let decrypted_service_data = match service_request.service_type.encrypt_option() {
             EncryptOption::User => {
                 let session_key = session_key
-                    .clone()
                     .ok_or(R2psRequestError::UnknownSession)
                     .map_err(|_| ServiceRequestError::UnknownSession)?;
 
@@ -626,12 +616,12 @@ impl R2psService {
                         .clone()
                         .service_data
                         .ok_or(ServiceRequestError::Unknown)?, // TODO
-                    &session_key,
+                    session_key,
                 )
                 .map_err(|_| ServiceRequestError::JweError)?
             }
             EncryptOption::Device => decrypt_service_data_jwe(
-                &service_request,
+                service_request,
                 &self.r2ps_server_config.server_private_key,
             )
             .map_err(|e| {
@@ -834,22 +824,6 @@ pub fn decrypt_service_data_jwe(
     }
 
     Ok(DecryptedData::new(payload))
-}
-
-fn encrypt_with_ec_jwk(
-    payload: &PakeResponsePayload,
-    ec_public_jwk: &josekit::jwk::Jwk,
-) -> Result<String, Box<dyn std::error::Error>> {
-    let payload_bytes = serde_json::to_vec(payload)?;
-
-    let mut header = JweHeader::new();
-    header.set_algorithm("ECDH-ES");
-    header.set_content_encryption("A256GCM");
-
-    let encrypter = ECDH_ES.encrypter_from_jwk(ec_public_jwk)?;
-    let jwe = josekit::jwe::serialize_compact(&payload_bytes, &header, &encrypter)?;
-
-    Ok(jwe)
 }
 
 impl EncryptOption {
