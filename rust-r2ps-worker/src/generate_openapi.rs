@@ -1,5 +1,5 @@
 // src/bin/generate_openapi.rs
-use utoipa::OpenApi;
+// use utoipa::OpenApi;
 //use crate::ApiDoc;
 
 fn main() {

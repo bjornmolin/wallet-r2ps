@@ -10,7 +10,7 @@ use rust_r2ps_worker::application::permit_list_use_case::{DeviceKey, PermitListD
 use rust_r2ps_worker::infrastructure::KafkaConfig;
 use std::collections::HashMap;
 use std::time::Duration;
-use tracing::{error, info, instrument, warn};
+use tracing::{error, info};
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
 use tracing_subscriber::{EnvFilter, fmt};
@@ -78,7 +78,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let rng = ring::rand::SystemRandom::new();
 
-    for device_no in 1..10 {
+    for _ in 1..10 {
         let device_id = Uuid::new_v4();
         let server_wallet_id = Uuid::new_v4();
 
@@ -124,24 +124,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             permit_device, private_pem_string
         );
 
-        match serde_json::to_string(&permit_device) {
-            Ok(json) => {
-                let key = permit_device.device_id.to_string();
-                let record = BaseRecord::to("wallet-permit-list")
-                    .key(&key)
-                    .payload(&json);
+        if let Ok(json) = serde_json::to_string(&permit_device) {
+            let key = permit_device.device_id.to_string();
+            let record = BaseRecord::to("wallet-permit-list")
+                .key(&key)
+                .payload(&json);
 
-                match producer.send(record) {
-                    Ok(_) => {
-                        // Message enqueued successfully
-                        info!("Message sent: payload='{}'", json);
-                    }
-                    Err((err, _)) => {
-                        error!("Failed to send message: {:?}", err);
-                    }
+            match producer.send(record) {
+                Ok(_) => {
+                    // Message enqueued successfully
+                    info!("Message sent: payload='{}'", json);
+                }
+                Err((err, _)) => {
+                    error!("Failed to send message: {:?}", err);
                 }
             }
-            Err(err) => {}
         }
         // Poll to trigger delivery callbacks (non-blocking)
         producer.poll(Duration::from_millis(0));
