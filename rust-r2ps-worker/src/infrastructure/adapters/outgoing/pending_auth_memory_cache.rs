@@ -7,6 +7,12 @@ pub struct PendingAuthMemoryCache {
     start_auth: Cache<String, Arc<LoginSession>>,
 }
 
+impl Default for PendingAuthMemoryCache {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl PendingAuthMemoryCache {
     pub fn new() -> PendingAuthMemoryCache {
         let start_auth = Cache::builder()
@@ -25,9 +31,6 @@ impl PendingAuthSpiPort for PendingAuthMemoryCache {
     }
 
     fn get_pending_auth(&self, client_id: &str) -> Option<Arc<LoginSession>> {
-        match self.start_auth.remove(client_id) {
-            Some(session) => Some(session),
-            None => None,
-        }
+        self.start_auth.remove(client_id)
     }
 }

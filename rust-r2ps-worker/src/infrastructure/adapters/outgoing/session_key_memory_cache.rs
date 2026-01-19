@@ -7,6 +7,12 @@ pub struct SessionKeyMemoryCache {
     cache: Cache<String, SessionKey>,
 }
 
+impl Default for SessionKeyMemoryCache {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl SessionKeyMemoryCache {
     pub fn new() -> SessionKeyMemoryCache {
         let cache = Cache::builder()

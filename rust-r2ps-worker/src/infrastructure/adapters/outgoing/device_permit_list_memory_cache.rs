@@ -8,6 +8,12 @@ pub struct DevicePermitListMemoryCache {
     permit_list: Cache<String, PermitListDto>,
 }
 
+impl Default for DevicePermitListMemoryCache {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl DevicePermitListMemoryCache {
     pub fn new() -> DevicePermitListMemoryCache {
         let permit_list = Cache::builder()

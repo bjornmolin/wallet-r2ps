@@ -11,6 +11,12 @@ pub struct ClientRepositoryMemoryCache {
     cache: Cache<String, ClientMetadata>,
 }
 
+impl Default for ClientRepositoryMemoryCache {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ClientRepositoryMemoryCache {
     pub fn new() -> ClientRepositoryMemoryCache {
         let cache: Cache<String, ClientMetadata> = CacheBuilder::new(2048)
@@ -43,10 +49,7 @@ impl ClientRepositoryMemoryCache {
 
 impl ClientRepositorySpiPort for ClientRepositoryMemoryCache {
     fn client_metadata(&self, client_id: &str) -> Option<ClientMetadata> {
-        match self.cache.get(client_id) {
-            Some(elem) => Some(elem.value().clone()),
-            None => None,
-        }
+        self.cache.get(client_id).map(|elem| elem.value().clone())
     }
 
     fn store_metadata(&self, client_metadata: ClientMetadata) -> Result<(), ClientRepositoryError> {

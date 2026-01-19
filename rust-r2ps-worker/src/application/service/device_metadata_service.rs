@@ -27,6 +27,5 @@ impl DeviceMetadataService {
     ) -> Result<(), PermitListError> {
         self.device_permit_list_spi_port
             .store_permit_list(device_id, permit_list_dto)
-            .map_err(|e| e.into())
     }
 }

@@ -10,7 +10,7 @@ pub fn load_pem_from_bas64_env(env_var_name: &str) -> Result<Pem, LoadPemError> 
             match BASE64_STANDARD.decode(&client_public_key_pem_base64) {
                 Ok(decoded_bytes) => match pem::parse(&decoded_bytes) {
                     Ok(client_public_key) => Ok(client_public_key),
-                    Err(e) => Err(LoadPemError::InvalidPem),
+                    Err(_e) => Err(LoadPemError::InvalidPem),
                 },
                 Err(e) => {
                     error!("Invalid client public key (base64 pem) : {}", e);
