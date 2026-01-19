@@ -11,8 +11,9 @@ use crate::domain::value_objects::r2ps::{
 };
 use crate::domain::{
     ClientMetadata, CreateKeyServiceData, CreateKeyServiceDataResponse, DefaultCipherSuite,
-    EncryptOption, KeyInfo, ListKeysResponse, PakeState, R2PsResponse, R2psRequest,
-    R2psRequestError, R2psServerConfig, ServiceRequestError, ServiceTypeId, SignRequest,
+    DeleteKeyServiceData, EncryptOption, KeyInfo, ListKeysResponse, PakeState, R2PsResponse,
+    R2psRequest, R2psRequestError, R2psServerConfig, ServiceRequestError, ServiceTypeId,
+    SignRequest,
 };
 use argon2::password_hash::rand_core::OsRng;
 use base64::Engine;
@@ -435,6 +436,19 @@ impl R2psService {
         }
     }
 
+    pub fn delete_key(
+        &self,
+        device_id: &str,
+        decrypted_payload: &[u8],
+    ) -> Result<Vec<u8>, ServiceRequestError> {
+        let payload = serde_json::from_slice::<DeleteKeyServiceData>(decrypted_payload)
+            .map_err(|_| ServiceRequestError::InvalidServiceRequestFormat)?;
+
+        self.client_repository_spi_port
+            .delete_key(device_id, &payload.kid)?;
+        Ok(br#"{"msg":"OK"}"#.to_vec())
+    }
+
     pub fn hsm_ecdsa_sign(
         &self,
         decrypted_payload: &Vec<u8>,
@@ -442,16 +456,10 @@ impl R2psService {
     ) -> Result<Vec<u8>, ServiceRequestError> {
         let payload = serde_json::from_slice::<SignRequest>(&decrypted_payload)
             .map_err(|_| ServiceRequestError::InvalidServiceRequestFormat)?;
-        let metadata = self
-            .client_repository_spi_port
-            .client_metadata(device_id)
-            .ok_or(ServiceRequestError::UnknownClient)?;
 
-        let hsm_key = metadata
-            .keys
-            .iter()
-            .find(|key| key.kid.eq(&payload.kid))
-            .ok_or(ServiceRequestError::UnknownKey)?;
+        let hsm_key = self
+            .client_repository_spi_port
+            .find_key(&device_id, &payload.kid)?;
 
         let raw_sig_bytes = self
             .hsm_spi_port
@@ -478,9 +486,7 @@ impl R2psService {
             .map_err(|_| ServiceRequestError::Unknown)?;
 
         // TODO ändra protokollet så att t.ex. id och publik nyckel returneras???
-        self.client_repository_spi_port
-            .add_key(&device_id, &key)
-            .map_err(|_| ServiceRequestError::Unknown)?;
+        self.client_repository_spi_port.add_key(&device_id, &key)?;
 
         serde_json::to_vec(&CreateKeyServiceDataResponse {
             created_key: payload.curve,
@@ -561,7 +567,7 @@ impl R2psService {
             ServiceTypeId::HsmEcdsa => self.hsm_ecdsa_sign(decrypted_payload, device_id),
             ServiceTypeId::HsmEcdh => Err(ServiceRequestError::Unknown),
             ServiceTypeId::HsmEcKeygen => self.hsm_key_gen(decrypted_payload, device_id),
-            ServiceTypeId::HsmEcDeleteKey => Err(ServiceRequestError::Unknown),
+            ServiceTypeId::HsmEcDeleteKey => self.delete_key(device_id, decrypted_payload),
             ServiceTypeId::HsmListKeys => self.hsm_list_wallet_keys(device_id),
             ServiceTypeId::SessionEnd => self.end_session(&pake_session_id),
             ServiceTypeId::SessionContextEnd => Err(ServiceRequestError::Unknown),
@@ -668,8 +674,12 @@ impl R2psRequestUseCase for R2psService {
             }
         };
 
-        let jws =
-            jws_with_jwk(&jwe, service_request.nonce, service_request.service_type.encrypt_option()).map_err(|_| R2psRequestError::JwsError)?;
+        let jws = jws_with_jwk(
+            &jwe,
+            service_request.nonce,
+            service_request.service_type.encrypt_option(),
+        )
+        .map_err(|_| R2psRequestError::JwsError)?;
 
         info!(
             "JWS response payload on {:?} {}",
@@ -789,8 +799,12 @@ impl EncryptOption {
     }
 }
 
-fn jws_with_jwk(data: &str, nonce: Option<String>, enc: EncryptOption) ->  Result<String, ServiceRequestError>  {
-    let now = Utc::now();    // Get duration in ms since Unix epoch
+fn jws_with_jwk(
+    data: &str,
+    nonce: Option<String>,
+    enc: EncryptOption,
+) -> Result<String, ServiceRequestError> {
+    let now = Utc::now(); // Get duration in ms since Unix epoch
     let claims = Claims {
         ver: "1.0".to_string(),
         nonce: nonce.unwrap().to_string(),

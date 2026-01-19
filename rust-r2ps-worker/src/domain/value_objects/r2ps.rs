@@ -136,6 +136,11 @@ pub struct CreateKeyServiceDataResponse {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct DeleteKeyServiceData {
+    pub kid: String,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct ListKeysResponse {
     pub key_info: Vec<KeyInfo>,
 }

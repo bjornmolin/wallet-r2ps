@@ -55,12 +55,34 @@ impl ClientRepositorySpiPort for ClientRepositoryMemoryCache {
         Ok(())
     }
 
+    fn find_key(&self, client_id: &str, kid: &str) -> Result<HsmKey, ClientRepositoryError> {
+        let client_metadata = self
+            .client_metadata(client_id)
+            .ok_or(ClientRepositoryError::ClientNotFound)?;
+
+        client_metadata
+            .keys
+            .iter()
+            .find(|key| key.kid.eq(&kid))
+            .cloned()
+            .ok_or(ClientRepositoryError::KeyNotFound)
+    }
+
     fn add_key(&self, client_id: &str, key: &HsmKey) -> Result<(), ClientRepositoryError> {
         // TODO race condition - just for demo
         let mut metadata = self
             .client_metadata(client_id)
-            .ok_or(ClientRepositoryError::NotFound)?;
+            .ok_or(ClientRepositoryError::ClientNotFound)?;
         metadata.keys.push(key.clone());
+        self.store_metadata(metadata)?;
+        Ok(())
+    }
+
+    fn delete_key(&self, client_id: &str, kid: &str) -> Result<(), ClientRepositoryError> {
+        let mut metadata = self
+            .client_metadata(client_id)
+            .ok_or(ClientRepositoryError::ClientNotFound)?;
+        metadata.keys.retain(|key| key.kid != kid);
         self.store_metadata(metadata)?;
         Ok(())
     }
