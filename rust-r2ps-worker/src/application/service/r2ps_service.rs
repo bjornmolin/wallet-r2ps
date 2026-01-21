@@ -237,14 +237,9 @@ impl R2psService {
                 info!("AUTH evaluate time: {} ns", elapsed.as_nanos());
 
                 Ok(R2psResponse {
-                    request_id: r2ps_request.request_id.clone(),
-                    wallet_id: r2ps_request.wallet_id.clone(),
-                    device_id: r2ps_request.device_id.clone(),
-                    http_status: 200,
                     state: r2ps_request.state.clone(),
                     payload: ServiceResponse::Pake(pake_response),
                 })
-
             }
             PakeState::Finalize => {
                 let session = self
@@ -295,10 +290,6 @@ impl R2psService {
                 info!("AUTH finalize time: {} ns", elapsed.as_nanos());
 
                 Ok(R2psResponse {
-                    request_id: r2ps_request.request_id.clone(),
-                    wallet_id: r2ps_request.wallet_id.clone(),
-                    device_id: r2ps_request.device_id.clone(),
-                    http_status: 200,
                     state: r2ps_request.state.clone(),
                     payload: ServiceResponse::Pake(pake_response),
                 })
@@ -368,10 +359,6 @@ impl R2psService {
                 };
 
                 Ok(R2psResponse {
-                    request_id: r2ps_request.request_id,
-                    wallet_id: r2ps_request.wallet_id,
-                    device_id: r2ps_request.device_id,
-                    http_status: 200,
                     state: r2ps_request.state,
                     payload: ServiceResponse::Pake(pake_response),
                 })
@@ -406,10 +393,6 @@ impl R2psService {
                 };
 
                 Ok(R2psResponse {
-                    request_id: r2ps_request.request_id,
-                    wallet_id: r2ps_request.wallet_id,
-                    device_id: r2ps_request.device_id,
-                    http_status: 200,
                     state: new_state,
                     payload: ServiceResponse::Pake(pake_response),
                 })
@@ -436,10 +419,6 @@ impl R2psService {
         };
 
         Ok(R2psResponse {
-            request_id: r2ps_request.request_id,
-            wallet_id: r2ps_request.wallet_id,
-            device_id: r2ps_request.device_id,
-            http_status: 200,
             state: new_state,
             payload: ServiceResponse::DeleteKey(DeleteKeyServiceData{kid: payload.kid}),
         })
@@ -469,10 +448,6 @@ impl R2psService {
         let asn1_signature: Vec<u8> = signature.to_der().as_bytes().to_vec();
         info!("Hsm Ecdsa asn1_signature: {:?}", asn1_signature);
         Ok(R2psResponse {
-            request_id: r2ps_request.request_id,
-            wallet_id: r2ps_request.wallet_id,
-            device_id: r2ps_request.device_id,
-            http_status: 200,
             state: r2ps_request.state,
             payload: ServiceResponse::Asn1Signature(asn1_signature),
         })
@@ -499,10 +474,6 @@ impl R2psService {
 
 
         Ok(R2psResponse {
-            request_id: r2ps_request.request_id,
-            wallet_id: r2ps_request.wallet_id,
-            device_id: r2ps_request.device_id,
-            http_status: 200,
             state: r2ps_request.state,
             payload: ServiceResponse::CreateKey(CreateKeyServiceDataResponse{
                 created_key: key.curve_name,
@@ -530,10 +501,6 @@ impl R2psService {
         };
 
         Ok(R2psResponse {
-            request_id: r2ps_request.request_id,
-            wallet_id: r2ps_request.wallet_id,
-            device_id: r2ps_request.device_id,
-            http_status: 200,
             state: r2ps_request.state,
             payload: ServiceResponse::ListKeys(list_keys)
         })
@@ -554,10 +521,6 @@ impl R2psService {
         };
 
         Ok(R2psResponse {
-            request_id: r2ps_request.request_id,
-            wallet_id: r2ps_request.wallet_id,
-            device_id: r2ps_request.device_id,
-            http_status: 200,
             state: r2ps_request.state,
             payload: ServiceResponse::Pake(pake_response)
         })
@@ -637,9 +600,9 @@ impl R2psRequestUseCase for R2psService {
         let r2ps_response = self
             .process_service_request(
                 R2psRequest {
-                    request_id: r2ps_request_jws.request_id,
-                    wallet_id: r2ps_request_jws.wallet_id,
-                    device_id: r2ps_request_jws.device_id,
+                    request_id: r2ps_request_jws.request_id.clone(),
+                    wallet_id: r2ps_request_jws.wallet_id.clone(),
+                    device_id: r2ps_request_jws.device_id.clone(),
                     state: state.clone(),
                     service_request: service_request.clone(),
                 },
@@ -676,19 +639,18 @@ impl R2psRequestUseCase for R2psService {
             service_request.service_type, jws
         );
 
-
-        let r2ps_response = R2psResponseJws {
-            request_id: r2ps_response.request_id.clone(),
-            wallet_id: r2ps_response.wallet_id.clone(),
-            device_id: r2ps_response.device_id.clone(),
+        let r2ps_response_jws = R2psResponseJws {
+            request_id: r2ps_request_jws.request_id.clone(),
+            wallet_id: r2ps_request_jws.wallet_id.clone(),
+            device_id: r2ps_request_jws.device_id.clone(),
             http_status: 200,
             state_jws: new_state_jws,
             service_response_jws: jws,
         };
 
         self.r2ps_response_spi_port
-            .send(r2ps_response.clone())
-            .map(|_| r2ps_response.request_id.clone())
+            .send(r2ps_response_jws.clone())
+            .map(|_| r2ps_response_jws.request_id.clone())
             .map_err(|_| R2psRequestError::ConnectionError)
     }
 }
