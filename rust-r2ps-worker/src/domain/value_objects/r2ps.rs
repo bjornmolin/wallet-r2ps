@@ -6,25 +6,72 @@ use std::string::FromUtf8Error;
 use std::time::Duration;
 use strum_macros::Display;
 use utoipa::ToSchema;
+use crate::domain::DeviceHsmState;
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct R2psRequest {
+pub struct R2psRequestDto {
     pub request_id: String,
-    pub wallet_id: String,
-    pub device_id: String,
-    pub payload: String,
+    pub wallet_id: String, // remove later? device_id or client_id?
+    pub device_id: String, // remove later? device_id or client_id?
+    pub state_jws: String,
+    pub service_request_jws: String,
 }
 
 // Define your output message structure
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct R2PsResponse {
+pub struct R2psResponseDto {
     pub request_id: String,
-    pub wallet_id: String,
-    pub device_id: String,
+    pub wallet_id: String, // remove later? device_id or client_id?
+    pub device_id: String,  // remove later? device_id or client_id?
     pub http_status: u16,
-    pub payload: String,
+    pub state_jws: String,
+    pub service_response_jws: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct R2psRequestJws {
+    pub request_id: String,
+    pub wallet_id: String, // remove later? device_id or client_id?
+    pub device_id: String, // remove later? device_id or client_id?
+    pub state_jws: String,
+    pub service_request_jws: String,
+}
+
+// Define your output message structure
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct R2psResponseJws {
+    pub request_id: String,
+    pub wallet_id: String, // remove later? device_id or client_id?
+    pub device_id: String,  // remove later? device_id or client_id?
+    pub http_status: u16,
+    pub state_jws: String,
+    pub service_response_jws: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct R2psRequest {
+    pub request_id: String,
+    pub wallet_id: String, // remove later? device_id or client_id?
+    pub device_id: String, // remove later? device_id or client_id?
+    pub state: DeviceHsmState, // change to jws later
+    pub service_request: ServiceRequest,
+}
+
+// Define your output message structure
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct R2psResponse {
+    pub request_id: String,
+    pub wallet_id: String, // remove later? device_id or client_id?
+    pub device_id: String,  // remove later? device_id or client_id?
+    pub http_status: u16,
+    pub state: DeviceHsmState, // change to jws later
+    pub payload: ServiceResponse,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -42,6 +89,39 @@ pub struct ServiceRequest {
     pub enc: Option<EncryptOption>,
     #[serde(rename = "data")]
     pub service_data: Option<String>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub enum ServiceResponse {
+    Pake(PakeResponsePayload),
+    CreateKey(CreateKeyServiceDataResponse),
+    DeleteKey(DeleteKeyServiceData),
+    ListKeys(ListKeysResponse),
+    Asn1Signature(Vec<u8>),
+}
+
+impl ServiceResponse {
+    pub fn serialize(&self) -> Result<Vec<u8>, ServiceRequestError> {
+        match self {
+            ServiceResponse::Pake(payload) => match serde_json::to_vec(&payload) {
+                Ok(payload_vec) => Ok(payload_vec),
+                Err(_) => Err(ServiceRequestError::Unknown),
+            },
+            ServiceResponse::CreateKey(payload) => match serde_json::to_vec(&payload) {
+                Ok(payload_vec) => Ok(payload_vec),
+                Err(_) => Err(ServiceRequestError::Unknown),
+            },
+            ServiceResponse::DeleteKey(payload) => match serde_json::to_vec(&payload) {
+                Ok(payload_vec) => Ok(payload_vec),
+                Err(_) => Err(ServiceRequestError::Unknown),
+            },
+            ServiceResponse::ListKeys(payload) => match serde_json::to_vec(&payload) {
+                Ok(payload_vec) => Ok(payload_vec),
+                Err(_) => Err(ServiceRequestError::Unknown),
+            },
+            ServiceResponse::Asn1Signature(payload) => Ok(payload.clone())
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -246,8 +326,8 @@ impl PakeRequestPayload {
     }
 
     /// Deserializes the payload from bytes
-    pub fn deserialize(data: &[u8]) -> Result<Self, serde_json::Error> {
-        serde_json::from_slice(data)
+    pub fn deserialize(data: Vec<u8>) -> Result<Self, serde_json::Error> {
+        serde_json::from_slice(data.as_slice())
     }
 }
 
@@ -291,6 +371,7 @@ pub enum ServiceRequestError {
     ServerLoginStartFailed,
     ServerLoginFinishFailed,
     SerializeResponseError,
+    SerializeStateError,
     InvalidServiceRequestFormat,
     InvalidSerializedPasswordFile,
     InvalidAuthenticateRequest,
@@ -331,4 +412,5 @@ pub enum R2psRequestError {
     UnsupportedContext,
     NotImplemented,
     ServiceError(ServiceRequestError),
+    InvalidState,
 }

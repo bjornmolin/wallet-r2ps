@@ -1,5 +1,5 @@
 use crate::application::{R2psResponseError, R2psResponseSpiPort};
-use crate::domain::R2PsResponse;
+use crate::domain::{R2psResponseJws};
 use crate::infrastructure::KafkaConfig;
 use rdkafka::ClientConfig;
 use rdkafka::producer::{BaseProducer, BaseRecord};
@@ -24,7 +24,7 @@ impl R2psResponseKafkaMessageSender {
 }
 
 impl R2psResponseSpiPort for R2psResponseKafkaMessageSender {
-    fn send(&self, r2ps_response: R2PsResponse) -> Result<(), R2psResponseError> {
+    fn send(&self, r2ps_response: R2psResponseJws) -> Result<(), R2psResponseError> {
         let response = match serde_json::to_string(&r2ps_response) {
             Ok(output_json) => {
                 let key = &r2ps_response.wallet_id;

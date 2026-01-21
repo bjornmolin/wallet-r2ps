@@ -17,6 +17,7 @@ use p256::ecdsa::VerifyingKey;
 use sha2::Sha256;
 use std::env;
 use std::sync::Arc;
+use serde::{Deserialize, Serialize};
 use tracing::{info, warn};
 use uuid::Uuid;
 
@@ -28,7 +29,7 @@ pub struct HsmWrapper {
     wrap_key_alias: Vec<u8>,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct HsmKey {
     pub wrapped_private_key: Vec<u8>,
     pub public_key_pem: String,

@@ -289,6 +289,7 @@ dependencies = [
  "iana-time-zone",
  "js-sys",
  "num-traits",
+ "serde",
  "wasm-bindgen",
  "windows-link",
 ]
@@ -691,6 +692,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b5e6043086bf7973472e0c7dff2142ea0b680d30e18d9cc40f267efbf222bd47"
 dependencies = [
  "base16ct",
+ "base64ct",
  "crypto-bigint",
  "digest",
  "ff",
@@ -701,6 +703,7 @@ dependencies = [
  "pkcs8",
  "rand_core 0.6.4",
  "sec1",
+ "serde_json",
  "serdect",
  "subtle",
  "zeroize",
@@ -2017,6 +2020,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2",
+ "spki",
  "strum_macros",
  "tracing",
  "tracing-subscriber",
