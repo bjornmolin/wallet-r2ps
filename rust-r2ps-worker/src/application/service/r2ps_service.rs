@@ -133,13 +133,12 @@ impl R2psService {
     pub(crate) fn authenticate(
         &self,
         r2ps_request: &R2psRequest,
+        decrypted_service_data: Option<Vec<u8>>,
     ) -> Result<R2psResponse, ServiceRequestError> {
         let start = Instant::now();
 
-        let decrypted_service_data = self.decrypt_service_data(&r2ps_request.service_request)?;
-
-
-        let pake_payload = PakeRequestPayload::deserialize(decrypted_service_data).map_err(|e| {
+        let data = decrypted_service_data.ok_or(ServiceRequestError::InvalidServiceRequestFormat)?;
+        let pake_payload = PakeRequestPayload::deserialize(data).map_err(|e| {
             warn!("error decoding pake request: {:?}", e);
             ServiceRequestError::InvalidPakeRequestPayload
         })?;
@@ -309,12 +308,12 @@ impl R2psService {
 
     pub(crate) fn pin_registration(
         &self,
-        r2ps_request: R2psRequest
+        r2ps_request: R2psRequest,
+        decrypted_service_data: Option<Vec<u8>>,
     ) -> Result<R2psResponse, ServiceRequestError> {
 
-        let decrypted_service_data = self.decrypt_service_data(&r2ps_request.service_request)?;
-
-        let pake_payload = PakeRequestPayload::deserialize(decrypted_service_data).map_err(|e| {
+        let data = decrypted_service_data.ok_or(ServiceRequestError::InvalidServiceRequestFormat)?;
+        let pake_payload = PakeRequestPayload::deserialize(data).map_err(|e| {
             warn!("error decoding pake registration request: {:?}", e);
             ServiceRequestError::InvalidPakeRequestPayload
         })?;
@@ -420,12 +419,12 @@ impl R2psService {
 
     pub fn delete_key(
         &self,
-        r2ps_request: R2psRequest
+        r2ps_request: R2psRequest,
+        decrypted_service_data: Option<Vec<u8>>,
     ) -> Result<R2psResponse, ServiceRequestError> {
 
-        let decrypted_service_data = self.decrypt_service_data(&r2ps_request.service_request)?;
-
-        let payload = serde_json::from_slice::<DeleteKeyServiceData>(&decrypted_service_data)
+        let data = decrypted_service_data.ok_or(ServiceRequestError::InvalidServiceRequestFormat)?;
+        let payload = serde_json::from_slice::<DeleteKeyServiceData>(&data)
             .map_err(|_| ServiceRequestError::InvalidServiceRequestFormat)?;
 
         let new_state = DeviceHsmState {
@@ -448,11 +447,11 @@ impl R2psService {
 
     pub fn hsm_ecdsa_sign(
         &self,
-        r2ps_request: R2psRequest
+        r2ps_request: R2psRequest,
+        decrypted_service_data: Option<Vec<u8>>,
     ) -> Result<R2psResponse, ServiceRequestError> {
-        let decrypted_service_data = self.decrypt_service_data(&r2ps_request.service_request)?;
-
-        let sign_request = serde_json::from_slice::<SignRequest>(&decrypted_service_data)
+        let data = decrypted_service_data.ok_or(ServiceRequestError::InvalidServiceRequestFormat)?;
+        let sign_request = serde_json::from_slice::<SignRequest>(&data)
             .map_err(|_| ServiceRequestError::InvalidServiceRequestFormat)?;
 
         let hsm_key = r2ps_request.state
@@ -482,10 +481,10 @@ impl R2psService {
     pub fn hsm_key_gen(
         &self,
         r2ps_request: R2psRequest,
+        decrypted_service_data: Option<Vec<u8>>,
     ) -> Result<R2psResponse, ServiceRequestError> {
-        let decrypted_service_data = self.decrypt_service_data(&r2ps_request.service_request)?;
-
-        let payload = serde_json::from_slice::<CreateKeyServiceData>(&decrypted_service_data)
+        let data = decrypted_service_data.ok_or(ServiceRequestError::InvalidServiceRequestFormat)?;
+        let payload = serde_json::from_slice::<CreateKeyServiceData>(&data)
             .map_err(|_| ServiceRequestError::InvalidServiceRequestFormat)?;
 
         let key = self
@@ -567,20 +566,17 @@ impl R2psService {
     pub(crate) fn process_service_request(
         &self,
         r2ps_request: R2psRequest,
+        decrypted_service_data: Option<Vec<u8>>,
     ) -> Result<R2psResponse, ServiceRequestError> {
         info!("SERVICE TYPE REQUEST {:?}", r2ps_request.service_request.service_type);
         match r2ps_request.service_request.service_type {
-            ServiceTypeId::Authenticate => self.authenticate(
-                &r2ps_request,
-            ),
-            ServiceTypeId::PinRegistration => {
-                self.pin_registration(r2ps_request)
-            }
+            ServiceTypeId::Authenticate => self.authenticate(&r2ps_request, decrypted_service_data),
+            ServiceTypeId::PinRegistration => self.pin_registration(r2ps_request, decrypted_service_data),
             ServiceTypeId::PinChange => Err(ServiceRequestError::Unknown),
-            ServiceTypeId::HsmEcdsa => self.hsm_ecdsa_sign(r2ps_request),
+            ServiceTypeId::HsmEcdsa => self.hsm_ecdsa_sign(r2ps_request, decrypted_service_data),
             ServiceTypeId::HsmEcdh => Err(ServiceRequestError::Unknown),
-            ServiceTypeId::HsmEcKeygen => self.hsm_key_gen(r2ps_request),
-            ServiceTypeId::HsmEcDeleteKey => self.delete_key(r2ps_request),
+            ServiceTypeId::HsmEcKeygen => self.hsm_key_gen(r2ps_request, decrypted_service_data),
+            ServiceTypeId::HsmEcDeleteKey => self.delete_key(r2ps_request, decrypted_service_data),
             ServiceTypeId::HsmListKeys => self.hsm_list_wallet_keys(r2ps_request),
             ServiceTypeId::SessionEnd => self.end_session(r2ps_request),
             ServiceTypeId::SessionContextEnd => Err(ServiceRequestError::Unknown),
@@ -628,10 +624,15 @@ impl R2psRequestUseCase for R2psService {
         }
 
         if let Some(pake_session_id) = &service_request.pake_session_id {
-            // TODO: identifies session key for request
             debug!("pake_session_id: {:?}", pake_session_id);
-            //return Err(R2psRequestError::NotImplemented);
         }
+
+        let decrypted_service_data = if service_request.service_data.is_some() {
+            Some(self.decrypt_service_data(&service_request)
+                .map_err(R2psRequestError::ServiceError)?)
+        } else {
+            None
+        };
 
         let r2ps_response = self
             .process_service_request(
@@ -641,7 +642,8 @@ impl R2psRequestUseCase for R2psService {
                     device_id: r2ps_request_jws.device_id,
                     state: state.clone(),
                     service_request: service_request.clone(),
-                }
+                },
+                decrypted_service_data,
             )
             .map_err(R2psRequestError::ServiceError)?;
 
