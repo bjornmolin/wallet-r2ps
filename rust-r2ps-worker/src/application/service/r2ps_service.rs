@@ -1,3 +1,4 @@
+use crate::application::helpers::ByteVector;
 use crate::application::hsm_spi_port::HsmSpiPort;
 use crate::application::pending_auth_spi_port::{LoginSession, PendingAuthSpiPort};
 use crate::application::session_key_spi_port::SessionKeySpiPort;
@@ -109,8 +110,11 @@ impl R2psService {
         match self.session_key_spi_port.get(pake_session_id) {
             Some(session_key) => match BASE64_STANDARD.decode(encrypted_payload) {
                 Ok(data) => {
-                    info!("decoded service_data hex: {:02X?}", data);
-                    match String::from_utf8(data) {
+                    // Cast to ByteVector for better debug logging. Remove casting if/when logging is removed.
+                    // TODO: Only log the bytes if it can't be decoded to UTF-8 (in which case it will be logged as UTF-8)
+                    let vec = ByteVector::new(data);
+                    info!("decoded service_data: {:?}", &vec);
+                    match String::from_utf8(vec.to_vec()) {
                         Ok(decoded_string) => {
                             info!("decoded service_data utf8: {}", decoded_string);
                             info!("decrypt with session key {:02X?}", session_key);
