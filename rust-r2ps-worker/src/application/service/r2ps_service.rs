@@ -37,6 +37,7 @@ use rdkafka::message::ToBytes;
 use std::sync::Arc;
 use std::time::Instant;
 use tracing::{debug, error, info, warn};
+use uuid::Uuid;
 
 #[derive(Clone)]
 pub struct R2psService {
@@ -222,17 +223,17 @@ impl R2psService {
 
                 let credential_response_bytes = server_login_start_result.message.serialize();
 
+                let pake_session_id = r2ps_request
+                    .service_request
+                    .pake_session_id
+                    .clone()
+                    .unwrap_or(Uuid::new_v4().to_string());
                 self.pending_auth_spi_port.store_pending_auth(
-                    r2ps_request
-                        .service_request
-                        .pake_session_id
-                        .clone()
-                        .unwrap()
-                        .as_str(),
+                    pake_session_id.as_str(),
                     &Arc::new(LoginSession::new(server_login_start_result.state)),
                 );
                 let pake_response = PakeResponsePayload {
-                    pake_session_id: r2ps_request.service_request.pake_session_id.clone(),
+                    pake_session_id: Some(pake_session_id),
                     task: None,
                     response_data: Some(STANDARD.encode(credential_response_bytes)),
                     message: None,
@@ -502,8 +503,16 @@ impl R2psService {
         let mut new_keys = r2ps_request.state.keys.clone();
         new_keys.push(key.clone());
 
+        let new_state = DeviceHsmState {
+            client_id: r2ps_request.state.client_id,
+            wallet_id: r2ps_request.state.wallet_id,
+            client_public_key: r2ps_request.state.client_public_key,
+            password_file: r2ps_request.state.password_file,
+            keys: new_keys,
+        };
+
         Ok(R2psResponse {
-            state: r2ps_request.state,
+            state: new_state,
             payload: ServiceResponse::CreateKey(CreateKeyServiceDataResponse {
                 created_key: key.curve_name,
             }),
@@ -873,13 +882,7 @@ fn encode_state_jws(
     nonce: Option<String>,
 ) -> Result<String, ServiceRequestError> {
     let now = Utc::now(); // Get duration in ms since Unix epoch
-    let claims = Claims {
-        ver: "1.0".to_string(),
-        nonce: nonce.unwrap().to_string(),
-        iat: now.timestamp(),
-        data: STANDARD.encode(state.serialize()?),
-        enc: "state_hsm".to_string(), // TODO
-    };
+
     let mut header = Header::new(Algorithm::ES256);
     header.typ = Some("JOSE".to_string());
 
@@ -891,7 +894,7 @@ tnZuC45gAg6wZ0UGe9nCeM7wc0yhRANCAASnNDG5ct6I/LOK0wpBtRJU4PcDFv6X
 
     let encoding_key = EncodingKey::from_ec_pem(private_key_pem.as_bytes()).unwrap();
 
-    let token = encode(&header, &claims, &encoding_key).unwrap();
+    let token = encode(&header, &state, &encoding_key).unwrap();
 
     println!("JWS Token: {}", token);
     Ok(token)
@@ -908,6 +911,7 @@ fn decode_state_jws(
             let mut validation = Validation::new(Algorithm::ES256);
             validation.validate_exp = false; // TODO: signera om state regelbundet?
             validation.required_spec_claims.clear();
+            validation.insecure_disable_signature_validation();
             match decode::<DeviceHsmState>(&state_jws, &decoding_key, &validation) {
                 Ok(service_request_claims) => {
                     info!("decoded claims: {:?}", service_request_claims);

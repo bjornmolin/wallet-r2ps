@@ -3,6 +3,7 @@ package se.digg.wallet.r2ps.application.service;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import se.digg.wallet.r2ps.application.port.in.R2psResponseUseCase;
+import se.digg.wallet.r2ps.application.port.out.R2psDeviceStateSpiPort;
 import se.digg.wallet.r2ps.application.port.out.R2psResponseSinkSpiPort;
 import se.digg.wallet.r2ps.domain.model.R2psResponse;
 import se.digg.wallet.r2ps.infrastructure.adapter.dto.R2psResponseDto;
@@ -16,13 +17,17 @@ public class R2psResponseService implements R2psResponseUseCase {
 
   private static final Logger log = LoggerFactory.getLogger(R2psResponseService.class);
   private final R2psResponseSinkSpiPort r2psResponseSinkSpiPort;
+  private final R2psDeviceStateSpiPort r2psDeviceStateSpiPort;
 
-  public R2psResponseService(R2psResponseSinkSpiPort r2psResponseSinkSpiPort) {
+  public R2psResponseService(R2psResponseSinkSpiPort r2psResponseSinkSpiPort,
+      R2psDeviceStateSpiPort r2psDeviceStateSpiPort) {
     this.r2psResponseSinkSpiPort = r2psResponseSinkSpiPort;
+    this.r2psDeviceStateSpiPort = r2psDeviceStateSpiPort;
   }
 
   @Override
   public void r2psResponseReady(R2psResponse r2psResponse) {
+    r2psDeviceStateSpiPort.save(r2psResponse.deviceId().toString(), r2psResponse.stateJws());
     r2psResponseSinkSpiPort.storeResponse(r2psResponse);
   }
 

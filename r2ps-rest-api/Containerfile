@@ -16,12 +16,10 @@ RUN chmod +x ./mvnw
 # RUN ./mvnw dependency:go-offline -B
 
 COPY r2ps-common-domain ./r2ps-common-domain
-COPY r2ps-worker ./r2ps-worker
 COPY r2ps-rest-api ./r2ps-rest-api
 
 # Make mvnw executable
-RUN ./mvnw install
-RUN ./mvnw package -pl r2ps-worker -am -DskipTests
+RUN mvn install
 
 # Build the application
 RUN mvn clean package -DskipTests

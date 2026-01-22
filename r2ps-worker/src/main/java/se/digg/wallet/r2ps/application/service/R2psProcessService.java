@@ -40,7 +40,7 @@ public class R2psProcessService implements R2psRequestUseCase {
     R2psResponse r2psResponse;
 
     try {
-      String responseBody = serviceRequestHandler.handleServiceRequest(r2psRequest.payload());
+      String responseBody = serviceRequestHandler.handleServiceRequest(r2psRequest.serviceRequestJws());
       log.info("R2PS request handled successfully for requestId: {}", r2psRequest.requestId());
       r2psResponse = new R2psResponse(
           r2psRequest.requestId(),

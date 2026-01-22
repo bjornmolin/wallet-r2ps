@@ -13,11 +13,6 @@ name = "generate_openapi"
 path = "src/generate_openapi.rs"
 
 [[bin]]
-name = "setup_demo_data"
-path = "src/setup_demo_data.rs"
-
-
-[[bin]]
 name = "rust-r2ps-worker"
 path = "src/main.rs"
 
