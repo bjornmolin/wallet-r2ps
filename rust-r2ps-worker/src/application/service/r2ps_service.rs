@@ -5,6 +5,7 @@ use crate::application::session_key_spi_port::{SessionKey, SessionKeySpiPort};
 use crate::application::{
     R2psRequestId, R2psRequestUseCase, R2psResponseSpiPort, load_pem_from_bas64_env,
 };
+use crate::define_byte_vector;
 use crate::domain::value_objects::r2ps::{
     Claims, PakeRequestPayload, PakeResponsePayload, ServiceRequest,
 };
@@ -38,6 +39,8 @@ use rdkafka::message::ToBytes;
 use std::sync::Arc;
 use std::time::Instant;
 use tracing::{debug, error, info, warn};
+
+define_byte_vector!(DecryptedData);
 
 #[derive(Clone)]
 pub struct R2psService {
@@ -106,7 +109,7 @@ impl R2psService {
         &self,
         encrypted_payload: &str,
         pake_session_id: &str,
-    ) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+    ) -> Result<DecryptedData, Box<dyn std::error::Error>> {
         match self.session_key_spi_port.get(pake_session_id) {
             Some(session_key) => match BASE64_STANDARD.decode(encrypted_payload) {
                 Ok(data) => {
@@ -122,7 +125,7 @@ impl R2psService {
                                 .decrypter_from_bytes(session_key.to_bytes())?;
                             let (payload, _header) =
                                 josekit::jwe::deserialize_compact(&decoded_string, &decrypter)?;
-                            Ok(payload)
+                            Ok(DecryptedData::new(payload))
                         }
                         Err(_) => Err(Box::new(std::io::Error::other("No session key"))),
                     }
@@ -136,13 +139,13 @@ impl R2psService {
     pub(crate) fn authenticate(
         &self,
         r2ps_request: &R2psRequest,
-        decrypted_service_data: Option<Vec<u8>>,
+        decrypted_service_data: Option<DecryptedData>,
     ) -> Result<R2psResponse, ServiceRequestError> {
         let start = Instant::now();
 
         let data =
             decrypted_service_data.ok_or(ServiceRequestError::InvalidServiceRequestFormat)?;
-        let pake_payload = PakeRequestPayload::deserialize(data).map_err(|e| {
+        let pake_payload = PakeRequestPayload::deserialize(data.to_vec()).map_err(|e| {
             warn!("error decoding pake request: {:?}", e);
             ServiceRequestError::InvalidPakeRequestPayload
         })?;
@@ -325,11 +328,11 @@ impl R2psService {
     pub(crate) fn pin_registration(
         &self,
         r2ps_request: R2psRequest,
-        decrypted_service_data: Option<Vec<u8>>,
+        decrypted_service_data: Option<DecryptedData>,
     ) -> Result<R2psResponse, ServiceRequestError> {
         let data =
             decrypted_service_data.ok_or(ServiceRequestError::InvalidServiceRequestFormat)?;
-        let pake_payload = PakeRequestPayload::deserialize(data).map_err(|e| {
+        let pake_payload = PakeRequestPayload::deserialize(data.to_vec()).map_err(|e| {
             warn!("error decoding pake registration request: {:?}", e);
             ServiceRequestError::InvalidPakeRequestPayload
         })?;
@@ -428,7 +431,7 @@ impl R2psService {
     pub fn delete_key(
         &self,
         r2ps_request: R2psRequest,
-        decrypted_service_data: Option<Vec<u8>>,
+        decrypted_service_data: Option<DecryptedData>,
     ) -> Result<R2psResponse, ServiceRequestError> {
         let data =
             decrypted_service_data.ok_or(ServiceRequestError::InvalidServiceRequestFormat)?;
@@ -457,7 +460,7 @@ impl R2psService {
     pub fn hsm_ecdsa_sign(
         &self,
         r2ps_request: R2psRequest,
-        decrypted_service_data: Option<Vec<u8>>,
+        decrypted_service_data: Option<DecryptedData>,
     ) -> Result<R2psResponse, ServiceRequestError> {
         let data =
             decrypted_service_data.ok_or(ServiceRequestError::InvalidServiceRequestFormat)?;
@@ -489,7 +492,7 @@ impl R2psService {
     pub fn hsm_key_gen(
         &self,
         r2ps_request: R2psRequest,
-        decrypted_service_data: Option<Vec<u8>>,
+        decrypted_service_data: Option<DecryptedData>,
     ) -> Result<R2psResponse, ServiceRequestError> {
         let data =
             decrypted_service_data.ok_or(ServiceRequestError::InvalidServiceRequestFormat)?;
@@ -578,7 +581,7 @@ impl R2psService {
     pub(crate) fn process_service_request(
         &self,
         r2ps_request: R2psRequest,
-        decrypted_service_data: Option<Vec<u8>>,
+        decrypted_service_data: Option<DecryptedData>,
     ) -> Result<R2psResponse, ServiceRequestError> {
         info!(
             "SERVICE TYPE REQUEST {:?}",
@@ -608,7 +611,7 @@ impl R2psService {
     fn decrypt_service_data(
         &self,
         service_request: &ServiceRequest,
-    ) -> Result<Vec<u8>, ServiceRequestError> {
+    ) -> Result<DecryptedData, ServiceRequestError> {
         let decrypted_service_data = match service_request.service_type.encrypt_option() {
             EncryptOption::User => self
                 .decrypt_jwe(
@@ -796,7 +799,7 @@ fn encrypt_with_ec_pem(
 pub fn decrypt_service_data_jwe(
     service_request: &ServiceRequest,
     server_private_key: &Pem,
-) -> Result<Vec<u8>, ServiceRequestError> {
+) -> Result<DecryptedData, ServiceRequestError> {
     let service_data = service_request
         .service_data
         .as_ref()
@@ -814,7 +817,7 @@ pub fn decrypt_service_data_jwe(
         info!("decrypted JWS payload: {}", text);
     }
 
-    Ok(payload)
+    Ok(DecryptedData::new(payload))
 }
 
 fn encrypt_with_ec_jwk(
