@@ -1,7 +1,7 @@
 use crate::application::helpers::ByteVector;
 use crate::application::hsm_spi_port::HsmSpiPort;
 use crate::application::pending_auth_spi_port::{LoginSession, PendingAuthSpiPort};
-use crate::application::session_key_spi_port::SessionKeySpiPort;
+use crate::application::session_key_spi_port::{SessionKey, SessionKeySpiPort};
 use crate::application::{
     R2psRequestId, R2psRequestUseCase, R2psResponseSpiPort, load_pem_from_bas64_env,
 };
@@ -298,7 +298,7 @@ impl R2psService {
                             .clone()
                             .unwrap()
                             .as_str(),
-                        result.session_key.to_vec(),
+                        SessionKey::new(result.session_key.to_vec()),
                     )
                     .map_err(|_| ServiceRequestError::InternalServerError)?;
 
