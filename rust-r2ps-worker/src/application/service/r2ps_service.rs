@@ -133,13 +133,12 @@ impl R2psService {
     pub(crate) fn authenticate(
         &self,
         r2ps_request: &R2psRequest,
+        decrypted_service_data: Option<Vec<u8>>,
     ) -> Result<R2psResponse, ServiceRequestError> {
         let start = Instant::now();
 
-        let decrypted_service_data = self.decrypt_service_data(&r2ps_request.service_request)?;
-
-
-        let pake_payload = PakeRequestPayload::deserialize(decrypted_service_data).map_err(|e| {
+        let data = decrypted_service_data.ok_or(ServiceRequestError::InvalidServiceRequestFormat)?;
+        let pake_payload = PakeRequestPayload::deserialize(data).map_err(|e| {
             warn!("error decoding pake request: {:?}", e);
             ServiceRequestError::InvalidPakeRequestPayload
         })?;
@@ -238,14 +237,9 @@ impl R2psService {
                 info!("AUTH evaluate time: {} ns", elapsed.as_nanos());
 
                 Ok(R2psResponse {
-                    request_id: r2ps_request.request_id.clone(),
-                    wallet_id: r2ps_request.wallet_id.clone(),
-                    device_id: r2ps_request.device_id.clone(),
-                    http_status: 200,
                     state: r2ps_request.state.clone(),
                     payload: ServiceResponse::Pake(pake_response),
                 })
-
             }
             PakeState::Finalize => {
                 let session = self
@@ -296,10 +290,6 @@ impl R2psService {
                 info!("AUTH finalize time: {} ns", elapsed.as_nanos());
 
                 Ok(R2psResponse {
-                    request_id: r2ps_request.request_id.clone(),
-                    wallet_id: r2ps_request.wallet_id.clone(),
-                    device_id: r2ps_request.device_id.clone(),
-                    http_status: 200,
                     state: r2ps_request.state.clone(),
                     payload: ServiceResponse::Pake(pake_response),
                 })
@@ -309,12 +299,12 @@ impl R2psService {
 
     pub(crate) fn pin_registration(
         &self,
-        r2ps_request: R2psRequest
+        r2ps_request: R2psRequest,
+        decrypted_service_data: Option<Vec<u8>>,
     ) -> Result<R2psResponse, ServiceRequestError> {
 
-        let decrypted_service_data = self.decrypt_service_data(&r2ps_request.service_request)?;
-
-        let pake_payload = PakeRequestPayload::deserialize(decrypted_service_data).map_err(|e| {
+        let data = decrypted_service_data.ok_or(ServiceRequestError::InvalidServiceRequestFormat)?;
+        let pake_payload = PakeRequestPayload::deserialize(data).map_err(|e| {
             warn!("error decoding pake registration request: {:?}", e);
             ServiceRequestError::InvalidPakeRequestPayload
         })?;
@@ -369,10 +359,6 @@ impl R2psService {
                 };
 
                 Ok(R2psResponse {
-                    request_id: r2ps_request.request_id,
-                    wallet_id: r2ps_request.wallet_id,
-                    device_id: r2ps_request.device_id,
-                    http_status: 200,
                     state: r2ps_request.state,
                     payload: ServiceResponse::Pake(pake_response),
                 })
@@ -407,10 +393,6 @@ impl R2psService {
                 };
 
                 Ok(R2psResponse {
-                    request_id: r2ps_request.request_id,
-                    wallet_id: r2ps_request.wallet_id,
-                    device_id: r2ps_request.device_id,
-                    http_status: 200,
                     state: new_state,
                     payload: ServiceResponse::Pake(pake_response),
                 })
@@ -420,12 +402,12 @@ impl R2psService {
 
     pub fn delete_key(
         &self,
-        r2ps_request: R2psRequest
+        r2ps_request: R2psRequest,
+        decrypted_service_data: Option<Vec<u8>>,
     ) -> Result<R2psResponse, ServiceRequestError> {
 
-        let decrypted_service_data = self.decrypt_service_data(&r2ps_request.service_request)?;
-
-        let payload = serde_json::from_slice::<DeleteKeyServiceData>(&decrypted_service_data)
+        let data = decrypted_service_data.ok_or(ServiceRequestError::InvalidServiceRequestFormat)?;
+        let payload = serde_json::from_slice::<DeleteKeyServiceData>(&data)
             .map_err(|_| ServiceRequestError::InvalidServiceRequestFormat)?;
 
         let new_state = DeviceHsmState {
@@ -437,10 +419,6 @@ impl R2psService {
         };
 
         Ok(R2psResponse {
-            request_id: r2ps_request.request_id,
-            wallet_id: r2ps_request.wallet_id,
-            device_id: r2ps_request.device_id,
-            http_status: 200,
             state: new_state,
             payload: ServiceResponse::DeleteKey(DeleteKeyServiceData{kid: payload.kid}),
         })
@@ -448,11 +426,11 @@ impl R2psService {
 
     pub fn hsm_ecdsa_sign(
         &self,
-        r2ps_request: R2psRequest
+        r2ps_request: R2psRequest,
+        decrypted_service_data: Option<Vec<u8>>,
     ) -> Result<R2psResponse, ServiceRequestError> {
-        let decrypted_service_data = self.decrypt_service_data(&r2ps_request.service_request)?;
-
-        let sign_request = serde_json::from_slice::<SignRequest>(&decrypted_service_data)
+        let data = decrypted_service_data.ok_or(ServiceRequestError::InvalidServiceRequestFormat)?;
+        let sign_request = serde_json::from_slice::<SignRequest>(&data)
             .map_err(|_| ServiceRequestError::InvalidServiceRequestFormat)?;
 
         let hsm_key = r2ps_request.state
@@ -470,10 +448,6 @@ impl R2psService {
         let asn1_signature: Vec<u8> = signature.to_der().as_bytes().to_vec();
         info!("Hsm Ecdsa asn1_signature: {:?}", asn1_signature);
         Ok(R2psResponse {
-            request_id: r2ps_request.request_id,
-            wallet_id: r2ps_request.wallet_id,
-            device_id: r2ps_request.device_id,
-            http_status: 200,
             state: r2ps_request.state,
             payload: ServiceResponse::Asn1Signature(asn1_signature),
         })
@@ -482,10 +456,10 @@ impl R2psService {
     pub fn hsm_key_gen(
         &self,
         r2ps_request: R2psRequest,
+        decrypted_service_data: Option<Vec<u8>>,
     ) -> Result<R2psResponse, ServiceRequestError> {
-        let decrypted_service_data = self.decrypt_service_data(&r2ps_request.service_request)?;
-
-        let payload = serde_json::from_slice::<CreateKeyServiceData>(&decrypted_service_data)
+        let data = decrypted_service_data.ok_or(ServiceRequestError::InvalidServiceRequestFormat)?;
+        let payload = serde_json::from_slice::<CreateKeyServiceData>(&data)
             .map_err(|_| ServiceRequestError::InvalidServiceRequestFormat)?;
 
         let key = self
@@ -500,10 +474,6 @@ impl R2psService {
 
 
         Ok(R2psResponse {
-            request_id: r2ps_request.request_id,
-            wallet_id: r2ps_request.wallet_id,
-            device_id: r2ps_request.device_id,
-            http_status: 200,
             state: r2ps_request.state,
             payload: ServiceResponse::CreateKey(CreateKeyServiceDataResponse{
                 created_key: key.curve_name,
@@ -531,10 +501,6 @@ impl R2psService {
         };
 
         Ok(R2psResponse {
-            request_id: r2ps_request.request_id,
-            wallet_id: r2ps_request.wallet_id,
-            device_id: r2ps_request.device_id,
-            http_status: 200,
             state: r2ps_request.state,
             payload: ServiceResponse::ListKeys(list_keys)
         })
@@ -555,10 +521,6 @@ impl R2psService {
         };
 
         Ok(R2psResponse {
-            request_id: r2ps_request.request_id,
-            wallet_id: r2ps_request.wallet_id,
-            device_id: r2ps_request.device_id,
-            http_status: 200,
             state: r2ps_request.state,
             payload: ServiceResponse::Pake(pake_response)
         })
@@ -567,20 +529,17 @@ impl R2psService {
     pub(crate) fn process_service_request(
         &self,
         r2ps_request: R2psRequest,
+        decrypted_service_data: Option<Vec<u8>>,
     ) -> Result<R2psResponse, ServiceRequestError> {
         info!("SERVICE TYPE REQUEST {:?}", r2ps_request.service_request.service_type);
         match r2ps_request.service_request.service_type {
-            ServiceTypeId::Authenticate => self.authenticate(
-                &r2ps_request,
-            ),
-            ServiceTypeId::PinRegistration => {
-                self.pin_registration(r2ps_request)
-            }
+            ServiceTypeId::Authenticate => self.authenticate(&r2ps_request, decrypted_service_data),
+            ServiceTypeId::PinRegistration => self.pin_registration(r2ps_request, decrypted_service_data),
             ServiceTypeId::PinChange => Err(ServiceRequestError::Unknown),
-            ServiceTypeId::HsmEcdsa => self.hsm_ecdsa_sign(r2ps_request),
+            ServiceTypeId::HsmEcdsa => self.hsm_ecdsa_sign(r2ps_request, decrypted_service_data),
             ServiceTypeId::HsmEcdh => Err(ServiceRequestError::Unknown),
-            ServiceTypeId::HsmEcKeygen => self.hsm_key_gen(r2ps_request),
-            ServiceTypeId::HsmEcDeleteKey => self.delete_key(r2ps_request),
+            ServiceTypeId::HsmEcKeygen => self.hsm_key_gen(r2ps_request, decrypted_service_data),
+            ServiceTypeId::HsmEcDeleteKey => self.delete_key(r2ps_request, decrypted_service_data),
             ServiceTypeId::HsmListKeys => self.hsm_list_wallet_keys(r2ps_request),
             ServiceTypeId::SessionEnd => self.end_session(r2ps_request),
             ServiceTypeId::SessionContextEnd => Err(ServiceRequestError::Unknown),
@@ -628,20 +587,26 @@ impl R2psRequestUseCase for R2psService {
         }
 
         if let Some(pake_session_id) = &service_request.pake_session_id {
-            // TODO: identifies session key for request
             debug!("pake_session_id: {:?}", pake_session_id);
-            //return Err(R2psRequestError::NotImplemented);
         }
+
+        let decrypted_service_data = if service_request.service_data.is_some() {
+            Some(self.decrypt_service_data(&service_request)
+                .map_err(R2psRequestError::ServiceError)?)
+        } else {
+            None
+        };
 
         let r2ps_response = self
             .process_service_request(
                 R2psRequest {
-                    request_id: r2ps_request_jws.request_id,
-                    wallet_id: r2ps_request_jws.wallet_id,
-                    device_id: r2ps_request_jws.device_id,
+                    request_id: r2ps_request_jws.request_id.clone(),
+                    wallet_id: r2ps_request_jws.wallet_id.clone(),
+                    device_id: r2ps_request_jws.device_id.clone(),
                     state: state.clone(),
                     service_request: service_request.clone(),
-                }
+                },
+                decrypted_service_data,
             )
             .map_err(R2psRequestError::ServiceError)?;
 
@@ -674,19 +639,18 @@ impl R2psRequestUseCase for R2psService {
             service_request.service_type, jws
         );
 
-
-        let r2ps_response = R2psResponseJws {
-            request_id: r2ps_response.request_id.clone(),
-            wallet_id: r2ps_response.wallet_id.clone(),
-            device_id: r2ps_response.device_id.clone(),
+        let r2ps_response_jws = R2psResponseJws {
+            request_id: r2ps_request_jws.request_id.clone(),
+            wallet_id: r2ps_request_jws.wallet_id.clone(),
+            device_id: r2ps_request_jws.device_id.clone(),
             http_status: 200,
             state_jws: new_state_jws,
             service_response_jws: jws,
         };
 
         self.r2ps_response_spi_port
-            .send(r2ps_response.clone())
-            .map(|_| r2ps_response.request_id.clone())
+            .send(r2ps_response_jws.clone())
+            .map(|_| r2ps_response_jws.request_id.clone())
             .map_err(|_| R2psRequestError::ConnectionError)
     }
 }

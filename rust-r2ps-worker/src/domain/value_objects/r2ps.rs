@@ -66,10 +66,6 @@ pub struct R2psRequest {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct R2psResponse {
-    pub request_id: String,
-    pub wallet_id: String, // remove later? device_id or client_id?
-    pub device_id: String,  // remove later? device_id or client_id?
-    pub http_status: u16,
     pub state: DeviceHsmState, // change to jws later
     pub payload: ServiceResponse,
 }
