@@ -1,6 +1,6 @@
 use crate::application::{R2psRequestUseCase, R2psService};
 use crate::domain::{R2psRequestDto, R2psRequestJws};
-use crate::infrastructure::{KafkaConfig};
+use crate::infrastructure::KafkaConfig;
 use rdkafka::consumer::{BaseConsumer, Consumer};
 use rdkafka::{ClientConfig, Message};
 use serde_json::from_slice;
@@ -85,8 +85,7 @@ impl R2psRequestKafkaMessageReceiver {
 
                         debug!("Received message: key='{:?}'", key);
 
-
-                        let r2ps_request = R2psRequestJws{
+                        let r2ps_request = R2psRequestJws {
                             request_id: r2ps_request_dto.request_id,
                             wallet_id: r2ps_request_dto.wallet_id,
                             device_id: r2ps_request_dto.device_id,
@@ -120,5 +119,3 @@ impl R2psRequestKafkaMessageReceiver {
         })
     }
 }
-
-

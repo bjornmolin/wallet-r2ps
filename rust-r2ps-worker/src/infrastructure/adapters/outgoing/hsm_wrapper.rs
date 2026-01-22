@@ -1,7 +1,7 @@
 use crate::application::hsm_spi_port::HsmSpiPort;
 use crate::domain::Curve;
-use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine;
+use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use cryptoki::context::{CInitializeArgs, Pkcs11};
 use cryptoki::error::Error;
 use cryptoki::mechanism::Mechanism;
@@ -9,15 +9,15 @@ use cryptoki::object::{Attribute, AttributeType, KeyType, ObjectClass, ObjectHan
 use cryptoki::session::{Session, UserType};
 use cryptoki::slot::Slot;
 use cryptoki::types::AuthPin;
-use der::asn1::OctetStringRef;
 use der::Decode;
+use der::asn1::OctetStringRef;
 use digest::Digest;
 use elliptic_curve::pkcs8::EncodePublicKey;
 use p256::ecdsa::VerifyingKey;
+use serde::{Deserialize, Serialize};
 use sha2::Sha256;
 use std::env;
 use std::sync::Arc;
-use serde::{Deserialize, Serialize};
 use tracing::{info, warn};
 use uuid::Uuid;
 

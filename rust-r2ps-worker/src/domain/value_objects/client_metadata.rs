@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DeviceHsmState {
-    pub client_id: String,  // device_id or client_id?
+    pub client_id: String, // device_id or client_id?
     pub wallet_id: String,
     pub client_public_key: Jwk,
     pub password_file: Option<GenericArray<u8, ServerRegistrationLen<DefaultCipherSuite>>>,

@@ -1,13 +1,19 @@
 use crate::application::hsm_spi_port::HsmSpiPort;
 use crate::application::pending_auth_spi_port::{LoginSession, PendingAuthSpiPort};
-use crate::application::session_key_spi_port::{SessionKeySpiPort};
+use crate::application::session_key_spi_port::SessionKeySpiPort;
 use crate::application::{
     R2psRequestId, R2psRequestUseCase, R2psResponseSpiPort, load_pem_from_bas64_env,
 };
 use crate::domain::value_objects::r2ps::{
     Claims, PakeRequestPayload, PakeResponsePayload, ServiceRequest,
 };
-use crate::domain::{CreateKeyServiceData, CreateKeyServiceDataResponse, DefaultCipherSuite, DeleteKeyServiceData, DeviceHsmState, EncryptOption, KeyInfo, ListKeysResponse, PakeState, R2psResponse, R2psRequest, R2psRequestError, R2psServerConfig, ServiceRequestError, ServiceResponse, ServiceTypeId, SignRequest, R2psRequestJws, R2psResponseJws};
+use crate::domain::{
+    CreateKeyServiceData, CreateKeyServiceDataResponse, DefaultCipherSuite, DeleteKeyServiceData,
+    DeviceHsmState, EncryptOption, KeyInfo, ListKeysResponse, PakeState, R2psRequest,
+    R2psRequestError, R2psRequestJws, R2psResponse, R2psResponseJws, R2psServerConfig,
+    ServiceRequestError, ServiceResponse, ServiceTypeId, SignRequest,
+};
+use crate::infrastructure::ec_jwk_to_pem;
 use argon2::password_hash::rand_core::OsRng;
 use base64::Engine;
 use base64::engine::general_purpose;
@@ -31,7 +37,6 @@ use rdkafka::message::ToBytes;
 use std::sync::Arc;
 use std::time::Instant;
 use tracing::{debug, error, info, warn};
-use crate::infrastructure::ec_jwk_to_pem;
 
 #[derive(Clone)]
 pub struct R2psService {
@@ -115,18 +120,12 @@ impl R2psService {
                                 josekit::jwe::deserialize_compact(&decoded_string, &decrypter)?;
                             Ok(payload)
                         }
-                        Err(_) => Err(Box::new(std::io::Error::other(
-                            "No session key",
-                        ))),
+                        Err(_) => Err(Box::new(std::io::Error::other("No session key"))),
                     }
                 }
-                Err(_) => Err(Box::new(std::io::Error::other(
-                    "No session key",
-                ))),
+                Err(_) => Err(Box::new(std::io::Error::other("No session key"))),
             },
-            None => Err(Box::new(std::io::Error::other(
-                "No session key",
-            ))),
+            None => Err(Box::new(std::io::Error::other("No session key"))),
         }
     }
 
@@ -137,7 +136,8 @@ impl R2psService {
     ) -> Result<R2psResponse, ServiceRequestError> {
         let start = Instant::now();
 
-        let data = decrypted_service_data.ok_or(ServiceRequestError::InvalidServiceRequestFormat)?;
+        let data =
+            decrypted_service_data.ok_or(ServiceRequestError::InvalidServiceRequestFormat)?;
         let pake_payload = PakeRequestPayload::deserialize(data).map_err(|e| {
             warn!("error decoding pake request: {:?}", e);
             ServiceRequestError::InvalidPakeRequestPayload
@@ -159,8 +159,9 @@ impl R2psService {
 
         match pake_payload.state {
             PakeState::Evaluate => {
-
-                let password_file_serialized = r2ps_request.state.password_file
+                let password_file_serialized = r2ps_request
+                    .state
+                    .password_file
                     .ok_or(ServiceRequestError::UnknownClient)?;
 
                 let password_file = ServerRegistration::<DefaultCipherSuite>::deserialize(
@@ -221,14 +222,19 @@ impl R2psService {
 
                 let credential_response_bytes = server_login_start_result.message.serialize();
 
-                self.pending_auth_spi_port
-                    .store_pending_auth(r2ps_request.service_request.pake_session_id.clone().unwrap().as_str(), &Arc::new(LoginSession::new(server_login_start_result.state)));
+                self.pending_auth_spi_port.store_pending_auth(
+                    r2ps_request
+                        .service_request
+                        .pake_session_id
+                        .clone()
+                        .unwrap()
+                        .as_str(),
+                    &Arc::new(LoginSession::new(server_login_start_result.state)),
+                );
                 let pake_response = PakeResponsePayload {
                     pake_session_id: r2ps_request.service_request.pake_session_id.clone(),
                     task: None,
-                    response_data: Some(
-                        STANDARD.encode(credential_response_bytes),
-                    ),
+                    response_data: Some(STANDARD.encode(credential_response_bytes)),
                     message: None,
                     session_expiration_time: None,
                 };
@@ -244,7 +250,14 @@ impl R2psService {
             PakeState::Finalize => {
                 let session = self
                     .pending_auth_spi_port
-                    .get_pending_auth(r2ps_request.service_request.pake_session_id.clone().ok_or(ServiceRequestError::UnknownSession)?.as_str())
+                    .get_pending_auth(
+                        r2ps_request
+                            .service_request
+                            .pake_session_id
+                            .clone()
+                            .ok_or(ServiceRequestError::UnknownSession)?
+                            .as_str(),
+                    )
                     .ok_or(ServiceRequestError::InvalidAuthenticateRequest)?;
 
                 let context = "RPS-Ops".as_bytes();
@@ -274,7 +287,15 @@ impl R2psService {
                 info!("SESSION KEY: {:X}", result.session_key);
 
                 self.session_key_spi_port
-                    .store(r2ps_request.service_request.pake_session_id.clone().unwrap().as_str(), result.session_key.to_vec())
+                    .store(
+                        r2ps_request
+                            .service_request
+                            .pake_session_id
+                            .clone()
+                            .unwrap()
+                            .as_str(),
+                        result.session_key.to_vec(),
+                    )
                     .map_err(|_| ServiceRequestError::InternalServerError)?;
 
                 let msg = br#"{"msg":"OK"}"#.to_vec();
@@ -302,8 +323,8 @@ impl R2psService {
         r2ps_request: R2psRequest,
         decrypted_service_data: Option<Vec<u8>>,
     ) -> Result<R2psResponse, ServiceRequestError> {
-
-        let data = decrypted_service_data.ok_or(ServiceRequestError::InvalidServiceRequestFormat)?;
+        let data =
+            decrypted_service_data.ok_or(ServiceRequestError::InvalidServiceRequestFormat)?;
         let pake_payload = PakeRequestPayload::deserialize(data).map_err(|e| {
             warn!("error decoding pake registration request: {:?}", e);
             ServiceRequestError::InvalidPakeRequestPayload
@@ -405,8 +426,8 @@ impl R2psService {
         r2ps_request: R2psRequest,
         decrypted_service_data: Option<Vec<u8>>,
     ) -> Result<R2psResponse, ServiceRequestError> {
-
-        let data = decrypted_service_data.ok_or(ServiceRequestError::InvalidServiceRequestFormat)?;
+        let data =
+            decrypted_service_data.ok_or(ServiceRequestError::InvalidServiceRequestFormat)?;
         let payload = serde_json::from_slice::<DeleteKeyServiceData>(&data)
             .map_err(|_| ServiceRequestError::InvalidServiceRequestFormat)?;
 
@@ -415,12 +436,17 @@ impl R2psService {
             wallet_id: r2ps_request.state.wallet_id,
             client_public_key: r2ps_request.state.client_public_key,
             password_file: r2ps_request.state.password_file,
-            keys: r2ps_request.state.keys.into_iter().filter(|key|key.kid != payload.kid).collect(),
+            keys: r2ps_request
+                .state
+                .keys
+                .into_iter()
+                .filter(|key| key.kid != payload.kid)
+                .collect(),
         };
 
         Ok(R2psResponse {
             state: new_state,
-            payload: ServiceResponse::DeleteKey(DeleteKeyServiceData{kid: payload.kid}),
+            payload: ServiceResponse::DeleteKey(DeleteKeyServiceData { kid: payload.kid }),
         })
     }
 
@@ -429,15 +455,18 @@ impl R2psService {
         r2ps_request: R2psRequest,
         decrypted_service_data: Option<Vec<u8>>,
     ) -> Result<R2psResponse, ServiceRequestError> {
-        let data = decrypted_service_data.ok_or(ServiceRequestError::InvalidServiceRequestFormat)?;
+        let data =
+            decrypted_service_data.ok_or(ServiceRequestError::InvalidServiceRequestFormat)?;
         let sign_request = serde_json::from_slice::<SignRequest>(&data)
             .map_err(|_| ServiceRequestError::InvalidServiceRequestFormat)?;
 
-        let hsm_key = r2ps_request.state
+        let hsm_key = r2ps_request
+            .state
             .keys
             .iter()
             .find(|key| key.kid.eq(&sign_request.kid))
-            .cloned().ok_or(ServiceRequestError::UnknownKey)?;
+            .cloned()
+            .ok_or(ServiceRequestError::UnknownKey)?;
 
         let raw_sig_bytes = self
             .hsm_spi_port
@@ -458,7 +487,8 @@ impl R2psService {
         r2ps_request: R2psRequest,
         decrypted_service_data: Option<Vec<u8>>,
     ) -> Result<R2psResponse, ServiceRequestError> {
-        let data = decrypted_service_data.ok_or(ServiceRequestError::InvalidServiceRequestFormat)?;
+        let data =
+            decrypted_service_data.ok_or(ServiceRequestError::InvalidServiceRequestFormat)?;
         let payload = serde_json::from_slice::<CreateKeyServiceData>(&data)
             .map_err(|_| ServiceRequestError::InvalidServiceRequestFormat)?;
 
@@ -472,24 +502,29 @@ impl R2psService {
         let mut new_keys = r2ps_request.state.keys.clone();
         new_keys.push(key.clone());
 
-
         Ok(R2psResponse {
             state: r2ps_request.state,
-            payload: ServiceResponse::CreateKey(CreateKeyServiceDataResponse{
+            payload: ServiceResponse::CreateKey(CreateKeyServiceDataResponse {
                 created_key: key.curve_name,
             }),
         })
     }
 
-    pub fn hsm_list_wallet_keys(&self, r2ps_request: R2psRequest) -> Result<R2psResponse, ServiceRequestError> {
+    pub fn hsm_list_wallet_keys(
+        &self,
+        r2ps_request: R2psRequest,
+    ) -> Result<R2psResponse, ServiceRequestError> {
         // let decrypted_service_data = self.decrypt_service_data(&r2ps_request.service_request)?;
 
         let list_keys = ListKeysResponse {
-            key_info: r2ps_request.state.keys
+            key_info: r2ps_request
+                .state
+                .keys
                 .iter()
                 .map(|key| KeyInfo {
                     kid: key.kid.clone(),
-                    public_key: key.public_key_pem
+                    public_key: key
+                        .public_key_pem
                         .lines()
                         .filter(|line| !line.starts_with("-----"))
                         .collect::<Vec<_>>()
@@ -502,13 +537,23 @@ impl R2psService {
 
         Ok(R2psResponse {
             state: r2ps_request.state,
-            payload: ServiceResponse::ListKeys(list_keys)
+            payload: ServiceResponse::ListKeys(list_keys),
         })
     }
 
-    pub fn end_session(&self, r2ps_request: R2psRequest) -> Result<R2psResponse, ServiceRequestError> {
+    pub fn end_session(
+        &self,
+        r2ps_request: R2psRequest,
+    ) -> Result<R2psResponse, ServiceRequestError> {
         self.session_key_spi_port
-            .end_session(r2ps_request.service_request.pake_session_id.clone().unwrap().as_str())
+            .end_session(
+                r2ps_request
+                    .service_request
+                    .pake_session_id
+                    .clone()
+                    .unwrap()
+                    .as_str(),
+            )
             .map_err(|_| ServiceRequestError::UnknownSession)?;
 
         let msg = br#"{"msg":"OK"}"#.to_vec();
@@ -522,7 +567,7 @@ impl R2psService {
 
         Ok(R2psResponse {
             state: r2ps_request.state,
-            payload: ServiceResponse::Pake(pake_response)
+            payload: ServiceResponse::Pake(pake_response),
         })
     }
 
@@ -531,10 +576,15 @@ impl R2psService {
         r2ps_request: R2psRequest,
         decrypted_service_data: Option<Vec<u8>>,
     ) -> Result<R2psResponse, ServiceRequestError> {
-        info!("SERVICE TYPE REQUEST {:?}", r2ps_request.service_request.service_type);
+        info!(
+            "SERVICE TYPE REQUEST {:?}",
+            r2ps_request.service_request.service_type
+        );
         match r2ps_request.service_request.service_type {
             ServiceTypeId::Authenticate => self.authenticate(&r2ps_request, decrypted_service_data),
-            ServiceTypeId::PinRegistration => self.pin_registration(r2ps_request, decrypted_service_data),
+            ServiceTypeId::PinRegistration => {
+                self.pin_registration(r2ps_request, decrypted_service_data)
+            }
             ServiceTypeId::PinChange => Err(ServiceRequestError::Unknown),
             ServiceTypeId::HsmEcdsa => self.hsm_ecdsa_sign(r2ps_request, decrypted_service_data),
             ServiceTypeId::HsmEcdh => Err(ServiceRequestError::Unknown),
@@ -551,22 +601,31 @@ impl R2psService {
         }
     }
 
-    fn decrypt_service_data(&self, service_request: &ServiceRequest) -> Result<Vec<u8>, ServiceRequestError> {
+    fn decrypt_service_data(
+        &self,
+        service_request: &ServiceRequest,
+    ) -> Result<Vec<u8>, ServiceRequestError> {
         let decrypted_service_data = match service_request.service_type.encrypt_option() {
             EncryptOption::User => self
                 .decrypt_jwe(
-                    &service_request.clone().service_data.ok_or(ServiceRequestError::Unknown)?, // TODO
-                    &service_request.clone().pake_session_id.ok_or(ServiceRequestError::Unknown)?, // TODO
+                    &service_request
+                        .clone()
+                        .service_data
+                        .ok_or(ServiceRequestError::Unknown)?, // TODO
+                    &service_request
+                        .clone()
+                        .pake_session_id
+                        .ok_or(ServiceRequestError::Unknown)?, // TODO
                 )
                 .map_err(|_| ServiceRequestError::JweError)?, // TODO
             EncryptOption::Device => decrypt_service_data_jwe(
                 &service_request,
                 &self.r2ps_server_config.server_private_key,
             )
-                .map_err(|e| {
-                    error!("Could not decrypt service data: {:?}", e);
-                    ServiceRequestError::JweError
-                })?,
+            .map_err(|e| {
+                error!("Could not decrypt service data: {:?}", e);
+                ServiceRequestError::JweError
+            })?,
         };
         Ok(decrypted_service_data)
     }
@@ -574,11 +633,18 @@ impl R2psService {
 
 impl R2psRequestUseCase for R2psService {
     fn execute(&self, r2ps_request_jws: R2psRequestJws) -> Result<R2psRequestId, R2psRequestError> {
+        let state = decode_state_jws(
+            r2ps_request_jws.state_jws,
+            &self.r2ps_server_config.server_public_key,
+        )
+        .map_err(|_| R2psRequestError::InvalidState)?;
 
-        let state = decode_state_jws(r2ps_request_jws.state_jws, &self.r2ps_server_config.server_public_key).map_err(|_|R2psRequestError::InvalidState)?;
-
-        let client_public_key = ec_jwk_to_pem(&state.client_public_key).map_err(|_|R2psRequestError::ServiceError(ServiceRequestError::InvalidClientPublicKey))?;
-        let service_request = decode_service_request_jws(r2ps_request_jws.service_request_jws, &client_public_key).map_err(|_|R2psRequestError::JwsError)?;
+        let client_public_key = ec_jwk_to_pem(&state.client_public_key).map_err(|_| {
+            R2psRequestError::ServiceError(ServiceRequestError::InvalidClientPublicKey)
+        })?;
+        let service_request =
+            decode_service_request_jws(r2ps_request_jws.service_request_jws, &client_public_key)
+                .map_err(|_| R2psRequestError::JwsError)?;
 
         debug!("DECODED JWS {:?}", service_request);
 
@@ -591,8 +657,10 @@ impl R2psRequestUseCase for R2psService {
         }
 
         let decrypted_service_data = if service_request.service_data.is_some() {
-            Some(self.decrypt_service_data(&service_request)
-                .map_err(R2psRequestError::ServiceError)?)
+            Some(
+                self.decrypt_service_data(&service_request)
+                    .map_err(R2psRequestError::ServiceError)?,
+            )
         } else {
             None
         };
@@ -610,20 +678,37 @@ impl R2psRequestUseCase for R2psService {
             )
             .map_err(R2psRequestError::ServiceError)?;
 
-        let new_state_jws = encode_state_jws(&r2ps_response.state, None).map_err(|_|R2psRequestError::JwsError)?;
+        let new_state_jws =
+            encode_state_jws(&r2ps_response.state, None).map_err(|_| R2psRequestError::JwsError)?;
         let jwe = match service_request.service_type.encrypt_option() {
             EncryptOption::User => {
                 info!(
                     "user encrypted, aes encrypt response data with session key: {:?}",
                     r2ps_response
                 );
-                self.encrypt_with_aes(&r2ps_response.payload.serialize().map_err(|_|R2psRequestError::EncryptionError)?, &service_request.clone().pake_session_id.unwrap())
-                    .map_err(|_| R2psRequestError::EncryptionError)?
+                self.encrypt_with_aes(
+                    &r2ps_response
+                        .payload
+                        .serialize()
+                        .map_err(|_| R2psRequestError::EncryptionError)?,
+                    &service_request.clone().pake_session_id.unwrap(),
+                )
+                .map_err(|_| R2psRequestError::EncryptionError)?
             }
             EncryptOption::Device => {
-                info!("device encrypted, encrypt response data: {:?}", r2ps_response);
-                encrypt_with_ec_pem(&r2ps_response.payload.serialize().map_err(|_|R2psRequestError::EncryptionError)?, &ec_jwk_to_pem(&state.client_public_key).map_err(|_|R2psRequestError::EncryptionError)?)
-                    .map_err(|_| R2psRequestError::EncryptionError)?
+                info!(
+                    "device encrypted, encrypt response data: {:?}",
+                    r2ps_response
+                );
+                encrypt_with_ec_pem(
+                    &r2ps_response
+                        .payload
+                        .serialize()
+                        .map_err(|_| R2psRequestError::EncryptionError)?,
+                    &ec_jwk_to_pem(&state.client_public_key)
+                        .map_err(|_| R2psRequestError::EncryptionError)?,
+                )
+                .map_err(|_| R2psRequestError::EncryptionError)?
             }
         };
 
@@ -793,7 +878,7 @@ fn encode_state_jws(
         nonce: nonce.unwrap().to_string(),
         iat: now.timestamp(),
         data: STANDARD.encode(state.serialize()?),
-        enc: "state_hsm".to_string() // TODO
+        enc: "state_hsm".to_string(), // TODO
     };
     let mut header = Header::new(Algorithm::ES256);
     header.typ = Some("JOSE".to_string());
@@ -812,8 +897,10 @@ tnZuC45gAg6wZ0UGe9nCeM7wc0yhRANCAASnNDG5ct6I/LOK0wpBtRJU4PcDFv6X
     Ok(token)
 }
 
-
-fn decode_state_jws(state_jws: String, public_key: &Pem) -> Result<DeviceHsmState, ServiceRequestError>  {
+fn decode_state_jws(
+    state_jws: String,
+    public_key: &Pem,
+) -> Result<DeviceHsmState, ServiceRequestError> {
     let pem_string = pem::encode(public_key);
 
     match DecodingKey::from_ec_pem(pem_string.as_bytes()) {

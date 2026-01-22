@@ -1,3 +1,4 @@
+use crate::domain::DeviceHsmState;
 use base64::DecodeError;
 use josekit::JoseError;
 use pem::Pem;
@@ -6,7 +7,6 @@ use std::string::FromUtf8Error;
 use std::time::Duration;
 use strum_macros::Display;
 use utoipa::ToSchema;
-use crate::domain::DeviceHsmState;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -24,7 +24,7 @@ pub struct R2psRequestDto {
 pub struct R2psResponseDto {
     pub request_id: String,
     pub wallet_id: String, // remove later? device_id or client_id?
-    pub device_id: String,  // remove later? device_id or client_id?
+    pub device_id: String, // remove later? device_id or client_id?
     pub http_status: u16,
     pub state_jws: String,
     pub service_response_jws: String,
@@ -46,7 +46,7 @@ pub struct R2psRequestJws {
 pub struct R2psResponseJws {
     pub request_id: String,
     pub wallet_id: String, // remove later? device_id or client_id?
-    pub device_id: String,  // remove later? device_id or client_id?
+    pub device_id: String, // remove later? device_id or client_id?
     pub http_status: u16,
     pub state_jws: String,
     pub service_response_jws: String,
@@ -56,8 +56,8 @@ pub struct R2psResponseJws {
 #[serde(rename_all = "camelCase")]
 pub struct R2psRequest {
     pub request_id: String,
-    pub wallet_id: String, // remove later? device_id or client_id?
-    pub device_id: String, // remove later? device_id or client_id?
+    pub wallet_id: String,     // remove later? device_id or client_id?
+    pub device_id: String,     // remove later? device_id or client_id?
     pub state: DeviceHsmState, // change to jws later
     pub service_request: ServiceRequest,
 }
@@ -115,7 +115,7 @@ impl ServiceResponse {
                 Ok(payload_vec) => Ok(payload_vec),
                 Err(_) => Err(ServiceRequestError::Unknown),
             },
-            ServiceResponse::Asn1Signature(payload) => Ok(payload.clone())
+            ServiceResponse::Asn1Signature(payload) => Ok(payload.clone()),
         }
     }
 }

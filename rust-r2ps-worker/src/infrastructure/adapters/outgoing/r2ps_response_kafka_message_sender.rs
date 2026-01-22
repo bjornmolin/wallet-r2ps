@@ -1,5 +1,5 @@
 use crate::application::{R2psResponseError, R2psResponseSpiPort};
-use crate::domain::{R2psResponseJws};
+use crate::domain::R2psResponseJws;
 use crate::infrastructure::KafkaConfig;
 use rdkafka::ClientConfig;
 use rdkafka::producer::{BaseProducer, BaseRecord};

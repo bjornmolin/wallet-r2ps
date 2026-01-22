@@ -1,7 +1,7 @@
-use std::collections::HashMap;
-use std::str::FromStr;
 use base64::Engine;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
+use std::collections::HashMap;
+use std::str::FromStr;
 
 use josekit::jwk::Jwk;
 use p256::PublicKey;
@@ -50,7 +50,9 @@ pub fn ec_jwk_to_pem(jwk: &Jwk) -> Result<Pem, Box<dyn std::error::Error>> {
     let public_key = PublicKey::from_jwk_str(&jwk_json).map_err(|_| "invalid jwk format")?;
 
     // 3. Export to PEM (SubjectPublicKeyInfo format)
-    let pem = public_key.to_public_key_pem(LineEnding::LF).map_err(|_| "invalid public key format")?;
+    let pem = public_key
+        .to_public_key_pem(LineEnding::LF)
+        .map_err(|_| "invalid public key format")?;
 
     Ok(Pem::from_str(&pem)?)
 }
