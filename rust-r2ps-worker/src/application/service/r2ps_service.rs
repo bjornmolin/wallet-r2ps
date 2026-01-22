@@ -82,57 +82,49 @@ impl R2psService {
     pub fn encrypt_with_aes(
         &self,
         payload: &[u8],
-        pake_session_id: &str,
+        session_key: &SessionKey,
     ) -> Result<String, ServiceRequestError> {
-        match self.session_key_spi_port.get(pake_session_id) {
-            Some(session_key) => {
-                let mut header = JweHeader::new();
-                header.set_algorithm("dir");
-                header.set_content_encryption("A256GCM");
+        let mut header = JweHeader::new();
+        header.set_algorithm("dir");
+        header.set_content_encryption("A256GCM");
 
-                let encrypter = DirectJweAlgorithm::Dir
-                    .encrypter_from_bytes(session_key)
-                    .map_err(|e| {
-                        error!("Failed to create encrypter: {:?}", e);
-                        ServiceRequestError::Unknown
-                    })?;
+        let encrypter = DirectJweAlgorithm::Dir
+            .encrypter_from_bytes(session_key.to_bytes())
+            .map_err(|e| {
+                error!("Failed to create encrypter: {:?}", e);
+                ServiceRequestError::Unknown
+            })?;
 
-                jwe::serialize_compact(payload, &header, &encrypter).map_err(|e| {
-                    error!("Failed to encrypt: {:?}", e);
-                    ServiceRequestError::Unknown
-                })
-            }
-            None => Err(ServiceRequestError::Unknown),
-        }
+        jwe::serialize_compact(payload, &header, &encrypter).map_err(|e| {
+            error!("Failed to encrypt: {:?}", e);
+            ServiceRequestError::Unknown
+        })
     }
     pub fn decrypt_jwe(
         &self,
         encrypted_payload: &str,
-        pake_session_id: &str,
+        session_key: &SessionKey,
     ) -> Result<DecryptedData, Box<dyn std::error::Error>> {
-        match self.session_key_spi_port.get(pake_session_id) {
-            Some(session_key) => match BASE64_STANDARD.decode(encrypted_payload) {
-                Ok(data) => {
-                    // Cast to ByteVector for better debug logging. Remove casting if/when logging is removed.
-                    // TODO: Only log the bytes if it can't be decoded to UTF-8 (in which case it will be logged as UTF-8)
-                    let vec = ByteVector::new(data);
-                    info!("decoded service_data: {:?}", &vec);
-                    match String::from_utf8(vec.to_vec()) {
-                        Ok(decoded_string) => {
-                            info!("decoded service_data utf8: {}", decoded_string);
-                            info!("decrypt with session key {:02X?}", session_key);
-                            let decrypter = DirectJweAlgorithm::Dir
-                                .decrypter_from_bytes(session_key.to_bytes())?;
-                            let (payload, _header) =
-                                josekit::jwe::deserialize_compact(&decoded_string, &decrypter)?;
-                            Ok(DecryptedData::new(payload))
-                        }
-                        Err(_) => Err(Box::new(std::io::Error::other("No session key"))),
+        match BASE64_STANDARD.decode(encrypted_payload) {
+            Ok(data) => {
+                // Cast to ByteVector for better debug logging. Remove casting if/when logging is removed.
+                // TODO: Only log the bytes if it can't be decoded to UTF-8 (in which case it will be logged as UTF-8)
+                let vec = ByteVector::new(data);
+                info!("decoded service_data hex: {:02X?}", &vec);
+                match String::from_utf8(vec.to_vec()) {
+                    Ok(decoded_string) => {
+                        info!("decoded service_data utf8: {}", decoded_string);
+                        debug!("decrypt with session key {:02X?}", session_key);
+                        let decrypter =
+                            DirectJweAlgorithm::Dir.decrypter_from_bytes(session_key.to_bytes())?;
+                        let (payload, _header) =
+                            josekit::jwe::deserialize_compact(&decoded_string, &decrypter)?;
+                        Ok(DecryptedData::new(payload))
                     }
+                    Err(_) => Err(Box::new(std::io::Error::other("Failed to decode UTF-8"))),
                 }
-                Err(_) => Err(Box::new(std::io::Error::other("No session key"))),
-            },
-            None => Err(Box::new(std::io::Error::other("No session key"))),
+            }
+            Err(_) => Err(Box::new(std::io::Error::other("Failed to decode base64"))),
         }
     }
 
@@ -611,20 +603,24 @@ impl R2psService {
     fn decrypt_service_data(
         &self,
         service_request: &ServiceRequest,
+        session_key: Option<&SessionKey>,
     ) -> Result<DecryptedData, ServiceRequestError> {
         let decrypted_service_data = match service_request.service_type.encrypt_option() {
-            EncryptOption::User => self
-                .decrypt_jwe(
+            EncryptOption::User => {
+                let session_key = session_key
+                    .clone()
+                    .ok_or(R2psRequestError::UnknownSession)
+                    .map_err(|_| ServiceRequestError::UnknownSession)?;
+
+                self.decrypt_jwe(
                     &service_request
                         .clone()
                         .service_data
                         .ok_or(ServiceRequestError::Unknown)?, // TODO
-                    &service_request
-                        .clone()
-                        .pake_session_id
-                        .ok_or(ServiceRequestError::Unknown)?, // TODO
+                    &session_key,
                 )
-                .map_err(|_| ServiceRequestError::JweError)?, // TODO
+                .map_err(|_| ServiceRequestError::JweError)?
+            }
             EncryptOption::Device => decrypt_service_data_jwe(
                 &service_request,
                 &self.r2ps_server_config.server_private_key,
@@ -663,9 +659,14 @@ impl R2psRequestUseCase for R2psService {
             debug!("pake_session_id: {:?}", pake_session_id);
         }
 
+        let session_key = service_request
+            .pake_session_id
+            .as_ref()
+            .and_then(|id| self.session_key_spi_port.get(id));
+
         let decrypted_service_data = if service_request.service_data.is_some() {
             Some(
-                self.decrypt_service_data(&service_request)
+                self.decrypt_service_data(&service_request, session_key.as_ref())
                     .map_err(R2psRequestError::ServiceError)?,
             )
         } else {
@@ -685,38 +686,44 @@ impl R2psRequestUseCase for R2psService {
             )
             .map_err(R2psRequestError::ServiceError)?;
 
+        let enc_option = service_request.service_type.encrypt_option();
+        info!(
+            "Response to {:?} will be encrypted with {:?} encryption",
+            service_request.service_type, enc_option
+        );
+
+        let response_payload = r2ps_response
+            .payload
+            .serialize()
+            .map_err(|_| R2psRequestError::EncryptionError)?;
+
+        match response_payload.first() == Some(&b'{') && response_payload.last() == Some(&b'}') {
+            true => debug!(
+                "JSON Response payload before encryption: {}",
+                String::from_utf8_lossy(&response_payload)
+            ),
+            false => debug!(
+                "Response payload before encryption (hex): {:02X?}",
+                r2ps_response
+            ),
+        }
+
         let new_state_jws =
             encode_state_jws(&r2ps_response.state, None).map_err(|_| R2psRequestError::JwsError)?;
-        let jwe = match service_request.service_type.encrypt_option() {
+        let jwe = match enc_option {
             EncryptOption::User => {
-                info!(
-                    "user encrypted, aes encrypt response data with session key: {:?}",
-                    r2ps_response
-                );
-                self.encrypt_with_aes(
-                    &r2ps_response
-                        .payload
-                        .serialize()
-                        .map_err(|_| R2psRequestError::EncryptionError)?,
-                    &service_request.clone().pake_session_id.unwrap(),
-                )
-                .map_err(|_| R2psRequestError::EncryptionError)?
+                let session_key = session_key
+                    .clone()
+                    .ok_or(R2psRequestError::UnknownSession)?;
+                self.encrypt_with_aes(&response_payload, &session_key)
+                    .map_err(|_| R2psRequestError::EncryptionError)?
             }
-            EncryptOption::Device => {
-                info!(
-                    "device encrypted, encrypt response data: {:?}",
-                    r2ps_response
-                );
-                encrypt_with_ec_pem(
-                    &r2ps_response
-                        .payload
-                        .serialize()
-                        .map_err(|_| R2psRequestError::EncryptionError)?,
-                    &ec_jwk_to_pem(&state.client_public_key)
-                        .map_err(|_| R2psRequestError::EncryptionError)?,
-                )
-                .map_err(|_| R2psRequestError::EncryptionError)?
-            }
+            EncryptOption::Device => encrypt_with_ec_pem(
+                &response_payload,
+                &ec_jwk_to_pem(&state.client_public_key)
+                    .map_err(|_| R2psRequestError::EncryptionError)?,
+            )
+            .map_err(|_| R2psRequestError::EncryptionError)?,
         };
 
         let jws = jws_with_jwk(
