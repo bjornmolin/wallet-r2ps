@@ -1,7 +1,7 @@
-use crate::domain::R2PsResponse;
+use crate::domain::R2psResponseJws;
 
 pub trait R2psResponseSpiPort {
-    fn send(&self, r2ps_response: R2PsResponse) -> Result<(), R2psResponseError>;
+    fn send(&self, r2ps_response: R2psResponseJws) -> Result<(), R2psResponseError>;
 }
 
 #[derive(Debug)]

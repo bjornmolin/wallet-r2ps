@@ -1,5 +1,5 @@
 use crate::application::{R2psRequestUseCase, R2psService};
-use crate::domain::R2psRequest;
+use crate::domain::{R2psRequestDto, R2psRequestJws};
 use crate::infrastructure::KafkaConfig;
 use rdkafka::consumer::{BaseConsumer, Consumer};
 use rdkafka::{ClientConfig, Message};
@@ -71,7 +71,7 @@ impl R2psRequestKafkaMessageReceiver {
                             }
                         };
 
-                        let input_msg: R2psRequest = match from_slice(payload) {
+                        let r2ps_request_dto: R2psRequestDto = match from_slice(payload) {
                             Ok(msg) => msg,
                             Err(e) => {
                                 error!("Failed to deserialize JSON: {:?}", e);
@@ -85,8 +85,16 @@ impl R2psRequestKafkaMessageReceiver {
 
                         debug!("Received message: key='{:?}'", key);
 
+                        let r2ps_request = R2psRequestJws {
+                            request_id: r2ps_request_dto.request_id,
+                            wallet_id: r2ps_request_dto.wallet_id,
+                            device_id: r2ps_request_dto.device_id,
+                            state_jws: r2ps_request_dto.state_jws,
+                            service_request_jws: r2ps_request_dto.service_request_jws,
+                        };
+
                         // Process the message (example: convert to uppercase)
-                        match r2ps_service.execute(input_msg) {
+                        match r2ps_service.execute(r2ps_request) {
                             Ok(request_id) => {
                                 // Serialize output message to JSON
                                 info!("R2psRequest received {}", request_id);

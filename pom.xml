@@ -12,7 +12,7 @@
 
     <modules>
         <module>r2ps-common-domain</module>
-        <module>r2ps-worker</module>
+        <!--module>r2ps-worker</module-->
         <module>r2ps-rest-api</module>
     </modules>
 

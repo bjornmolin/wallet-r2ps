@@ -9,6 +9,7 @@ import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.stereotype.Service;
 import se.digg.wallet.r2ps.application.port.in.R2psResponseUseCase;
+import se.digg.wallet.r2ps.application.port.out.R2psDeviceStateSpiPort;
 import se.digg.wallet.r2ps.application.port.out.R2psResponseSinkSpiPort;
 import se.digg.wallet.r2ps.application.service.R2psResponseService;
 import se.digg.wallet.r2ps.domain.model.R2psResponse;
@@ -30,9 +31,10 @@ public class R2psResponseReadyMessageReceiver {
   private final R2psResponseUseCase r2psResponseUseCase;
 
   public R2psResponseReadyMessageReceiver(ObjectMapper objectMapper,
-      R2psResponseSinkSpiPort r2psResponseSinkSpiPort) {
+      R2psResponseSinkSpiPort r2psResponseSinkSpiPort,
+      R2psDeviceStateSpiPort r2psDeviceStateSpiPort) {
     this.objectMapper = objectMapper;
-    r2psResponseUseCase = new R2psResponseService(r2psResponseSinkSpiPort);
+    r2psResponseUseCase = new R2psResponseService(r2psResponseSinkSpiPort, r2psDeviceStateSpiPort);
   }
 
 
