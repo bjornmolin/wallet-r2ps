@@ -9,7 +9,7 @@ use crate::define_byte_vector;
 use crate::domain::value_objects::r2ps::{Claims, PakeResponsePayload, ServiceRequest};
 use crate::domain::{
     DefaultCipherSuite, DeviceHsmState, EncryptOption, R2psRequest, R2psRequestError,
-    R2psRequestJws, R2psResponse, R2psResponseJws, R2psServerConfig, ServiceRequestError,
+    R2psRequestJws, R2psResponseJws, R2psServerConfig, ServiceRequestError,
 };
 use crate::infrastructure::ec_jwk_to_pem;
 use argon2::password_hash::rand_core::OsRng;
@@ -37,11 +37,8 @@ use super::operations::OperationDispatcher;
 
 pub struct R2psService {
     r2ps_response_spi_port: Arc<dyn R2psResponseSpiPort + Send + Sync>,
-    hsm_spi_port: Arc<dyn HsmSpiPort + Send + Sync>,
-    opaque_server_setup: ServerSetup<DefaultCipherSuite>,
     r2ps_server_config: R2psServerConfig,
     session_key_spi_port: Arc<dyn SessionKeySpiPort + Send + Sync>,
-    pending_auth_spi_port: Arc<dyn PendingAuthSpiPort + Send + Sync>,
     // Operation dispatcher
     operation_dispatcher: OperationDispatcher,
 }
@@ -61,23 +58,20 @@ impl R2psService {
             create_server_setup(&server_private_key).expect("Failed to create opaque server setup");
 
         let operation_dispatcher = OperationDispatcher::from_dependencies(
-            server_setup.clone(),
+            server_setup,
             session_key_spi_port.clone(),
-            hsm_spi_port.clone(),
-            pending_auth_spi_port.clone(),
+            hsm_spi_port,
+            pending_auth_spi_port,
         );
 
         Self {
             r2ps_response_spi_port,
-            hsm_spi_port: hsm_spi_port.clone(),
             r2ps_server_config: R2psServerConfig {
                 server_public_key,
                 server_private_key,
             },
             operation_dispatcher,
-            opaque_server_setup: server_setup,
             session_key_spi_port,
-            pending_auth_spi_port,
         }
     }
 
