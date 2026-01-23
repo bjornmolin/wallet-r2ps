@@ -409,4 +409,5 @@ pub enum R2psRequestError {
     NotImplemented,
     ServiceError(ServiceRequestError),
     InvalidState,
+    UnknownSession,
 }
