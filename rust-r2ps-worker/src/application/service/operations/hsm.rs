@@ -34,7 +34,7 @@ impl ServiceOperation for HsmEcdsaSignOperation {
             .state
             .keys
             .iter()
-            .find(|key| key.kid.eq(&sign_request.kid))
+            .find(|key| key.public_key_jwk.kid.eq(&sign_request.kid))
             .cloned()
             .ok_or(ServiceRequestError::UnknownKey)?;
 
@@ -77,13 +77,13 @@ impl ServiceOperation for HsmKeygenOperation {
         let payload = serde_json::from_slice::<CreateKeyServiceData>(&data)
             .map_err(|_| ServiceRequestError::InvalidServiceRequestFormat)?;
 
-        let key = self
+        let hsm_key = self
             .hsm_spi_port
             .generate_key("foobar", &payload.curve)
             .map_err(|_| ServiceRequestError::Unknown)?;
 
         let mut new_keys = r2ps_request.state.keys.clone();
-        new_keys.push(key.clone());
+        new_keys.push(hsm_key.clone());
 
         let new_state = DeviceHsmState {
             client_id: r2ps_request.state.client_id,
@@ -96,7 +96,7 @@ impl ServiceOperation for HsmKeygenOperation {
         Ok(R2psResponse {
             state: new_state,
             payload: ServiceResponse::CreateKey(CreateKeyServiceDataResponse {
-                created_key: key.curve_name,
+                public_key: hsm_key.public_key_jwk,
             }),
         })
     }
@@ -124,7 +124,7 @@ impl ServiceOperation for HsmDeleteKeyOperation {
                 .state
                 .keys
                 .into_iter()
-                .filter(|key| key.kid != payload.kid)
+                .filter(|key| key.public_key_jwk.kid != payload.kid)
                 .collect(),
         };
 
@@ -149,15 +149,8 @@ impl ServiceOperation for HsmListKeysOperation {
                 .keys
                 .iter()
                 .map(|key| KeyInfo {
-                    kid: key.kid.clone(),
-                    public_key: key
-                        .public_key_pem
-                        .lines()
-                        .filter(|line| !line.starts_with("-----"))
-                        .collect::<Vec<_>>()
-                        .join(""),
-                    curve_name: key.curve_name.clone(),
-                    creation_time: Some(key.creation_time.timestamp()),
+                    public_key: key.public_key_jwk.clone(),
+                    creation_time: Some(key.creation_time.timestamp_millis()),
                 })
                 .collect(),
         };

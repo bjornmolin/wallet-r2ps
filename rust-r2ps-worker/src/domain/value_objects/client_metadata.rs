@@ -1,5 +1,4 @@
-use crate::domain::{DefaultCipherSuite, ServiceRequestError};
-use crate::infrastructure::hsm_wrapper::HsmKey;
+use crate::domain::{DefaultCipherSuite, HsmKey, ServiceRequestError};
 use generic_array::GenericArray;
 use josekit::jwk::Jwk;
 use opaque_ke::ServerRegistrationLen;

@@ -6,7 +6,7 @@ use crate::application::{
     R2psRequestId, R2psRequestUseCase, R2psResponseSpiPort, load_pem_from_bas64_env,
 };
 use crate::define_byte_vector;
-use crate::domain::value_objects::r2ps::{Claims, PakeResponsePayload, ServiceRequest};
+use crate::domain::value_objects::r2ps::{Claims, ServiceRequest};
 use crate::domain::{
     DefaultCipherSuite, DeviceHsmState, EncryptOption, R2psRequest, R2psRequestError,
     R2psRequestJws, R2psResponseJws, R2psServerConfig, ServiceRequestError,
@@ -132,7 +132,6 @@ impl R2psService {
         let decrypted_service_data = match service_request.service_type.encrypt_option() {
             EncryptOption::User => {
                 let session_key = session_key
-                    .clone()
                     .ok_or(R2psRequestError::UnknownSession)
                     .map_err(|_| ServiceRequestError::UnknownSession)?;
 
@@ -141,12 +140,12 @@ impl R2psService {
                         .clone()
                         .service_data
                         .ok_or(ServiceRequestError::Unknown)?, // TODO
-                    &session_key,
+                    session_key,
                 )
                 .map_err(|_| ServiceRequestError::JweError)?
             }
             EncryptOption::Device => decrypt_service_data_jwe(
-                &service_request,
+                service_request,
                 &self.r2ps_server_config.server_private_key,
             )
             .map_err(|e| {
@@ -350,22 +349,6 @@ pub fn decrypt_service_data_jwe(
     }
 
     Ok(DecryptedData::new(payload))
-}
-
-fn encrypt_with_ec_jwk(
-    payload: &PakeResponsePayload,
-    ec_public_jwk: &josekit::jwk::Jwk,
-) -> Result<String, Box<dyn std::error::Error>> {
-    let payload_bytes = serde_json::to_vec(payload)?;
-
-    let mut header = JweHeader::new();
-    header.set_algorithm("ECDH-ES");
-    header.set_content_encryption("A256GCM");
-
-    let encrypter = ECDH_ES.encrypter_from_jwk(ec_public_jwk)?;
-    let jwe = josekit::jwe::serialize_compact(&payload_bytes, &header, &encrypter)?;
-
-    Ok(jwe)
 }
 
 impl EncryptOption {
