@@ -17,11 +17,11 @@ pub struct R2psRequestKafkaMessageReceiver {
 
 impl R2psRequestKafkaMessageReceiver {
     pub fn new(
-        r2ps_service: &R2psService,
+        r2ps_service: Arc<R2psService>,
         running: Arc<AtomicBool>,
     ) -> R2psRequestKafkaMessageReceiver {
         R2psRequestKafkaMessageReceiver {
-            r2ps_service: Arc::new(r2ps_service.clone()),
+            r2ps_service,
             running,
         }
     }
