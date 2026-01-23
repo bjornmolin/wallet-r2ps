@@ -181,7 +181,7 @@ services:
     environment:
       <<: *kafka-env
       KAFKA_NODE_ID: 3
-      KAFKA_LISTENERS: PLAINTEXT://:19092,CONTROLLER://:9094,EXTERNAL://:9092
+      KAFKA_LISTENERS: PLAINTEXT://:19092,CONTROLLER://:9093,EXTERNAL://:9092
       KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka-3:19092,EXTERNAL://localhost:9094
     healthcheck:
       test: ["CMD-SHELL", "nc -z localhost 19092 || exit 1"]
