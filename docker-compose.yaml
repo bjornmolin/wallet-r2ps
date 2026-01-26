@@ -2,26 +2,6 @@ name: r2ps-dev
 
 services:
 
-  r2ps-demo-client:
-    image: rhsm-client
-    ports:
-      - "9000:8080"
-      - "9002:8000"
-    restart: on-failure
-    volumes:
-      - ./r2ps-demo-client/resources:/resources
-      - ./r2ps-demo-client/demo:/demo
-    env_file: .env
-    environment:
-      SPRING_CONFIG_ADDITIONAL_LOCATION: /config/
-      SPRING_PROFILES_ACTIVE: demo
-      RPS_OPS_CLIENT_SERVER_URL: http://r2ps-rest-api:8088
-      SERVER_PORT: 8080
-      SERVER_SSL_ENABLED: "false"
-      TZ: "Europe/Stockholm"
-    networks:
-      - wallet-network
-
   r2ps-rest-api:
     build:
       context: .
@@ -46,48 +26,6 @@ services:
       SPRING_DATA_REDIS_DATABASE: 0
       TZ: "Europe/Stockholm"
     env_file: .env
-    networks:
-      - wallet-network
-
-  r2ps-worker:
-    profiles:
-      - old-java
-    build:
-      context: .
-      dockerfile: ./r2ps-worker/Containerfile
-    ports:
-      - "9020:8443"
-      - "9022:8000"
-    restart: on-failure
-    depends_on:
-      kafka-1:
-        condition: service_healthy
-      kafka-2:
-        condition: service_healthy
-      kafka-3:
-        condition: service_healthy
-    volumes:
-      - ./r2ps-worker/target/test-data:/target/test-data
-      - ./demo:/demo
-      - ./filestorage:/app/filestorage
-      - ./foo:/app/foo
-    env_file: .env
-    environment:
-      SERVER_PORT: 8099
-      #SPRING_CONFIG_ADDITIONAL_LOCATION: /config/
-      SPRING_PROFILES_ACTIVE: hsm,demo
-      SPRING_KAFKA_BOOTSTRAP_SERVERS: "kafka:29092"
-      SPRING_KAFKA_BOOTSTRAP-SERVERS: "kafka:29092"
-      SPRING_DATA_REDIS_HOST: "valkey"
-      SPRING_DATA_REDIS_PORT: 6379
-      SPRING_DATA_REDIS_USERNAME: "default"
-      SPRING_DATA_REDIS_PASSWORD: "secret"
-      SPRING_DATA_REDIS_DATABASE: 0
-      SPRING_DATASOURCE_URL: jdbc:postgresql://db:5432/wallet
-      SPRING_DATASOURCE_USERNAME: walletuser
-      SPRING_DATASOURCE_PASSWORD: s3cret
-      RPS_OPS_CLIENT_REGISTRY_INIT_DIRECTORY: /app/filestorage/dev
-      TZ: "Europe/Stockholm"
     networks:
       - wallet-network
 
@@ -224,29 +162,6 @@ services:
       KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka-1:19092,kafka-2:19092,kafka-3:19092
     networks:
       - wallet-network
-  db:
-    image: postgres
-    restart: always
-    # set shared memory limit when using docker compose
-    shm_size: 128mb
-    # or set shared memory limit when deploy via swarm stack
-    #volumes:
-    #  - type: tmpfs
-    #    target: /dev/shm
-    #    tmpfs:
-    #      size: 134217728 # 128*2^20 bytes = 128Mb
-    environment:
-      POSTGRES_PASSWORD: s3cret
-      POSTGRES_DB: wallet
-      POSTGRES_USER: walletuser
-    ports:
-      - "5432:5432"
-    networks:
-      - wallet-network
-
-#volumes:
-#  kafka-data:
-#    driver: local
 
 networks:
   wallet-network:
