@@ -1556,8 +1556,9 @@ checksum = "42f5e15c9953c5e4ccceeb2e7382a716482c34515315f7b03532b8b4e8393d2d"
 
 [[package]]
 name = "opaque-ke"
-version = "4.1.0-pre.1"
-source = "git+https://github.com/facebook/opaque-ke#a85a7bea8ff3939318b91aa4bbf118b93a8eb341"
+version = "4.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ded22991b43cd15561b62b2e1cf9ace1344a8534eebec96202d5c96a77a6616a"
 dependencies = [
  "curve25519-dalek",
  "derive-where",

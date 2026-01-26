@@ -20,18 +20,18 @@ path = "src/main.rs"
 rdkafka = { version = "0.38.0", features = ["cmake-build"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-jws = { version="0.2.9" }
+jws = { version = "0.2.9" }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
-ctrlc = {  version="3.4", features = ["termination"] }
+ctrlc = { version = "3.4", features = ["termination"] }
 dotenvy = "0.15.7"
-dotenv_config="0.2.2"
-dotenv_codegen="0.15.0"
+dotenv_config = "0.2.2"
+dotenv_codegen = "0.15.0"
 foyer = "0.20"
 moka = { version = "0.12", features = ["sync"] }
 strum_macros = "0.27.2"
-cryptoki="0.10.0"
-opaque-ke = { git = "https://github.com/facebook/opaque-ke", features = ["std"]} #, rev = "6d2af37a" }
+cryptoki = "0.10.0"
+opaque-ke = { version = "4.0.1", features = ["std"] }
 rand = "0.8"
 sha2 = "0.10.9"
 josekit = "0.10.3"
