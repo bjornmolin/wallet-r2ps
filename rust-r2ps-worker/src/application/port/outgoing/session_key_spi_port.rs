@@ -1,4 +1,5 @@
 use crate::define_byte_vector;
+use std::time::Duration;
 
 define_byte_vector!(SessionKey);
 
@@ -7,8 +8,9 @@ pub trait SessionKeySpiPort {
         &self,
         pake_session_id: &str,
         session_key: SessionKey,
-    ) -> Result<(), ClientRepositoryError>;
+    ) -> Result<Duration, ClientRepositoryError>;
     fn get(&self, pake_session_id: &str) -> Option<SessionKey>;
+    fn get_remaining_ttl(&self, pake_session_id: &str) -> Option<Duration>;
     fn end_session(&self, pake_session_id: &str) -> Result<(), ClientRepositoryError>;
 }
 

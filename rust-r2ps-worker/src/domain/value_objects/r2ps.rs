@@ -82,7 +82,6 @@ pub struct ServiceRequest {
     #[serde(rename = "ver")]
     pub version: Option<String>,
     pub nonce: Option<String>,
-    pub iat: Option<i64>,
     pub enc: Option<EncryptOption>,
     #[serde(rename = "data")]
     pub service_data: Option<String>,
@@ -100,24 +99,13 @@ pub enum ServiceResponse {
 impl ServiceResponse {
     pub fn serialize(&self) -> Result<Vec<u8>, ServiceRequestError> {
         match self {
-            ServiceResponse::Pake(payload) => match serde_json::to_vec(&payload) {
-                Ok(payload_vec) => Ok(payload_vec),
-                Err(_) => Err(ServiceRequestError::Unknown),
-            },
-            ServiceResponse::CreateKey(payload) => match serde_json::to_vec(&payload) {
-                Ok(payload_vec) => Ok(payload_vec),
-                Err(_) => Err(ServiceRequestError::Unknown),
-            },
-            ServiceResponse::DeleteKey(payload) => match serde_json::to_vec(&payload) {
-                Ok(payload_vec) => Ok(payload_vec),
-                Err(_) => Err(ServiceRequestError::Unknown),
-            },
-            ServiceResponse::ListKeys(payload) => match serde_json::to_vec(&payload) {
-                Ok(payload_vec) => Ok(payload_vec),
-                Err(_) => Err(ServiceRequestError::Unknown),
-            },
-            ServiceResponse::Asn1Signature(payload) => Ok(payload.clone()),
+            Self::Pake(p) => serde_json::to_vec(p),
+            Self::CreateKey(p) => serde_json::to_vec(p),
+            Self::DeleteKey(p) => serde_json::to_vec(p),
+            Self::ListKeys(p) => serde_json::to_vec(p),
+            Self::Asn1Signature(p) => return Ok(p.clone()),
         }
+        .map_err(|_| ServiceRequestError::Unknown)
     }
 }
 
@@ -172,6 +160,11 @@ impl ServiceTypeId {
     }
 }
 
+/// Converts a `std::time::Duration` to an ISO 8601 duration (seconds only)
+pub fn to_iso8601_duration(d: Duration) -> iso8601_duration::Duration {
+    iso8601_duration::Duration::new(0.0, 0.0, 0.0, 0.0, 0.0, d.as_secs() as f32)
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PakeResponsePayload {
     /// The PAKE session ID assigned by the server
@@ -190,7 +183,7 @@ pub struct PakeResponsePayload {
     pub message: Option<String>,
 
     #[serde(rename = "session_expiration_time")]
-    pub session_expiration_time: Option<i64>,
+    pub session_expiration_time: Option<iso8601_duration::Duration>,
 }
 
 #[derive(Serialize, Deserialize, ToSchema, Debug, Clone, Display)]
@@ -227,7 +220,7 @@ pub struct ListKeysResponse {
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct KeyInfo {
-    pub creation_time: Option<i64>,
+    pub creation_time: Option<String>,
     pub public_key: EcPublicJwk,
 }
 
@@ -268,7 +261,8 @@ pub struct SignRequest {
 pub struct Claims {
     pub ver: String,
     pub nonce: String,
-    pub iat: i64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub time_until_expiry: Option<iso8601_duration::Duration>,
     pub enc: String,
     pub data: String,
 }
@@ -304,14 +298,6 @@ pub struct PakeRequestPayload {
     #[serde(rename = "task", skip_serializing_if = "Option::is_none")]
     pub task: Option<String>,
 
-    #[serde(
-        rename = "session_duration",
-        skip_serializing_if = "Option::is_none",
-        with = "duration_serde",
-        default
-    )]
-    pub session_duration: Option<Duration>,
-
     /// The PAKE request data as defined by the PAKE state
     #[serde(rename = "req")]
     pub request_data: String,
@@ -329,29 +315,6 @@ impl PakeRequestPayload {
     }
 }
 
-// Helper module for Duration serialization/deserialization
-mod duration_serde {
-    use serde::{Deserialize, Deserializer, Serializer};
-    use std::time::Duration;
-
-    pub fn serialize<S>(duration: &Option<Duration>, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        match duration {
-            Some(d) => serializer.serialize_u64(d.as_secs()),
-            None => serializer.serialize_none(),
-        }
-    }
-
-    pub fn deserialize<'de, D>(deserializer: D) -> Result<Option<Duration>, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let secs = Option::<u64>::deserialize(deserializer)?;
-        Ok(secs.map(Duration::from_secs))
-    }
-}
 #[derive(Debug, Clone)]
 pub struct R2psServerConfig {
     //pub private_key_jwk: Jwk,

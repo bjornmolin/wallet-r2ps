@@ -8,16 +8,13 @@ import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import se.digg.wallet.r2ps.domain.command.Command;
-import se.digg.wallet.r2ps.domain.mapper.json.CommandDeserializer;
-import se.digg.wallet.r2ps.domain.mapper.json.EventDeserializer;
 import se.digg.wallet.r2ps.domain.event.Event;
-import se.digg.wallet.r2ps.domain.mapper.InstantDeserializer;
-import se.digg.wallet.r2ps.domain.mapper.InstantSerializer;
 import se.digg.wallet.r2ps.domain.mapper.PublicKeyDeserializer;
 import se.digg.wallet.r2ps.domain.mapper.PublicKeySerializer;
+import se.digg.wallet.r2ps.domain.mapper.json.CommandDeserializer;
+import se.digg.wallet.r2ps.domain.mapper.json.EventDeserializer;
 
 import java.security.PublicKey;
-import java.time.Instant;
 
 @Configuration
 public class JacksonConfig {
@@ -36,12 +33,8 @@ public class JacksonConfig {
   @Bean
   public SimpleModule customSerializerDeserializerModule() {
     SimpleModule module = new SimpleModule();
-    module
-        .addDeserializer(Event.class, new EventDeserializer())
+    module.addDeserializer(Event.class, new EventDeserializer())
         .addDeserializer(Command.class, new CommandDeserializer())
-        // TODO: check why our own....InstantSerializer InstantDeserializer
-        .addSerializer(Instant.class, new InstantSerializer())
-        .addDeserializer(Instant.class, new InstantDeserializer())
         .addSerializer(PublicKey.class, new PublicKeySerializer())
         .addDeserializer(PublicKey.class, new PublicKeyDeserializer());
 

@@ -5,13 +5,12 @@ use crate::application::session_key_spi_port::{SessionKey, SessionKeySpiPort};
 use crate::domain::value_objects::r2ps::{PakeRequestPayload, PakeResponsePayload};
 use crate::domain::{
     DefaultCipherSuite, DeviceHsmState, PakeState, R2psRequest, R2psResponse, ServiceRequestError,
-    ServiceResponse,
+    ServiceResponse, to_iso8601_duration,
 };
 use argon2::password_hash::rand_core::OsRng;
 use base64::Engine;
 use base64::engine::general_purpose;
 use base64::prelude::BASE64_STANDARD;
-use chrono::Utc;
 use opaque_ke::{
     CredentialFinalization, CredentialRequest, Identifiers, RegistrationRequest,
     RegistrationUpload, ServerLogin, ServerLoginParameters, ServerRegistration, ServerSetup,
@@ -196,14 +195,16 @@ impl ServiceOperation for AuthenticateOperation {
 
                 info!("SESSION KEY: {:X}", result.session_key);
 
-                self.session_key_spi_port
+                let pake_session_id = r2ps_request
+                    .service_request
+                    .pake_session_id
+                    .clone()
+                    .ok_or(ServiceRequestError::UnknownSession)?;
+
+                let session_remaining_ttl = self
+                    .session_key_spi_port
                     .store(
-                        r2ps_request
-                            .service_request
-                            .pake_session_id
-                            .clone()
-                            .unwrap()
-                            .as_str(),
+                        pake_session_id.as_str(),
                         SessionKey::new(result.session_key.to_vec()),
                     )
                     .map_err(|_| ServiceRequestError::InternalServerError)?;
@@ -214,7 +215,7 @@ impl ServiceOperation for AuthenticateOperation {
                     task: None,
                     response_data: Some(BASE64_STANDARD.encode(&msg)),
                     message: None,
-                    session_expiration_time: Some(Utc::now().timestamp_millis()),
+                    session_expiration_time: Some(to_iso8601_duration(session_remaining_ttl)),
                 };
 
                 let elapsed = start.elapsed();
