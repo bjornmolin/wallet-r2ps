@@ -1,6 +1,6 @@
 mod adapters;
-pub mod config;
 
+pub mod config;
 pub mod util;
 
 pub use adapters::*;
