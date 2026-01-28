@@ -160,7 +160,7 @@ impl R2psRequestUseCase for R2psService {
             r2ps_request_jws.request_id, r2ps_request_jws.wallet_id
         );
 
-        debug!("DECODED JWS {:?}", service_request);
+        debug!("Decoded JWS request: {:#?}", service_request);
 
         if service_request.context != "hsm" {
             return Err(R2psRequestError::UnsupportedContext);
