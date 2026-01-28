@@ -150,7 +150,7 @@ impl ServiceOperation for HsmListKeysOperation {
                 .iter()
                 .map(|key| KeyInfo {
                     public_key: key.public_key_jwk.clone(),
-                    creation_time: Some(key.creation_time.timestamp_millis()),
+                    created_at: Some(key.created_at.to_rfc3339()),
                 })
                 .collect(),
         };

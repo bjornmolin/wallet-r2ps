@@ -42,7 +42,6 @@ fn test_decrypt_service_data_jwe_happy_path() -> Result<(), Box<dyn std::error::
         pake_session_id: None,
         version: None,
         nonce: None,
-        iat: None,
         enc: Some(User),
         service_data: Some(BASE64_STANDARD.encode(jwe_compact)),
     };
@@ -85,7 +84,6 @@ fn test_decrypt_service_data_jwe_rejects_invalid_formats() -> Result<(), Box<dyn
             pake_session_id: None,
             version: None,
             nonce: None,
-            iat: None,
             enc: Some(User),
             service_data: Some(BASE64_STANDARD.encode(invalid_jwe)),
         };
@@ -114,7 +112,6 @@ fn test_decrypt_service_data_jwe_rejects_invalid_base64() -> Result<(), Box<dyn 
         pake_session_id: None,
         version: None,
         nonce: None,
-        iat: None,
         enc: Some(User),
         service_data: Some(BASE64_STANDARD.encode("not-base64!!".to_string())),
     };

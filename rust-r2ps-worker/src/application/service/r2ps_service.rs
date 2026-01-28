@@ -9,14 +9,13 @@ use crate::define_byte_vector;
 use crate::domain::value_objects::r2ps::{Claims, ServiceRequest};
 use crate::domain::{
     DefaultCipherSuite, DeviceHsmState, EncryptOption, R2psRequest, R2psRequestError,
-    R2psRequestJws, R2psResponseJws, R2psServerConfig, ServiceRequestError,
+    R2psRequestJws, R2psResponseJws, R2psServerConfig, ServiceRequestError, to_iso8601_duration,
 };
 use crate::infrastructure::ec_jwk_to_pem;
 use argon2::password_hash::rand_core::OsRng;
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD;
 use base64::prelude::BASE64_STANDARD;
-use chrono::Utc;
 use josekit::jwe;
 use josekit::jwe::alg::direct::DirectJweAlgorithm;
 use josekit::jwe::{ECDH_ES, JweHeader};
@@ -29,6 +28,7 @@ use p256::pkcs8::DecodePrivateKey;
 use pem::Pem;
 use rdkafka::message::ToBytes;
 use std::sync::Arc;
+use std::time::Duration;
 use tracing::{debug, error, info};
 
 define_byte_vector!(DecryptedData);
@@ -187,14 +187,12 @@ impl R2psRequestUseCase for R2psService {
             .as_ref()
             .and_then(|id| self.session_key_spi_port.get(id));
 
-        let decrypted_service_data = if service_request.service_data.is_some() {
-            Some(
-                self.decrypt_service_data(&service_request, session_key.as_ref())
-                    .map_err(R2psRequestError::ServiceError)?,
-            )
-        } else {
-            None
-        };
+        let decrypted_service_data = service_request
+            .service_data
+            .as_ref()
+            .map(|_| self.decrypt_service_data(&service_request, session_key.as_ref()))
+            .transpose()
+            .map_err(R2psRequestError::ServiceError)?;
 
         let r2ps_response = self
             .operation_dispatcher
@@ -250,10 +248,16 @@ impl R2psRequestUseCase for R2psService {
             .map_err(|_| R2psRequestError::EncryptionError)?,
         };
 
+        let ttl = service_request
+            .pake_session_id
+            .as_ref()
+            .and_then(|id| self.session_key_spi_port.get_remaining_ttl(id));
+
         let jws = jws_with_jwk(
             &jwe,
             service_request.nonce,
             service_request.service_type.encrypt_option(),
+            ttl,
         )
         .map_err(|_| R2psRequestError::JwsError)?;
 
@@ -364,12 +368,12 @@ fn jws_with_jwk(
     data: &str,
     nonce: Option<String>,
     enc: EncryptOption,
+    ttl: Option<Duration>,
 ) -> Result<String, ServiceRequestError> {
-    let now = Utc::now(); // Get duration in ms since Unix epoch
     let claims = Claims {
         ver: "1.0".to_string(),
         nonce: nonce.unwrap().to_string(),
-        iat: now.timestamp(),
+        expires_in: ttl.map(to_iso8601_duration),
         enc: enc.as_str().to_string(),
         data: STANDARD.encode(data),
     };
@@ -394,8 +398,6 @@ fn encode_state_jws(
     state: &DeviceHsmState,
     nonce: Option<String>,
 ) -> Result<String, ServiceRequestError> {
-    let now = Utc::now(); // Get duration in ms since Unix epoch
-
     let mut header = Header::new(Algorithm::ES256);
     header.typ = Some("JOSE".to_string());
 
@@ -422,7 +424,7 @@ fn decode_state_jws(
     match DecodingKey::from_ec_pem(pem_string.as_bytes()) {
         Ok(decoding_key) => {
             let mut validation = Validation::new(Algorithm::ES256);
-            validation.validate_exp = false; // TODO: signera om state regelbundet?
+            validation.validate_exp = false;
             validation.required_spec_claims.clear();
             validation.insecure_disable_signature_validation();
             match decode::<DeviceHsmState>(&state_jws, &decoding_key, &validation) {
@@ -451,7 +453,7 @@ fn decode_service_request_jws(
     match DecodingKey::from_ec_pem(pem_string.as_bytes()) {
         Ok(decoding_key) => {
             let mut validation = Validation::new(Algorithm::ES256);
-            validation.validate_exp = false; // TODO kolla om vi ska validera
+            validation.validate_exp = false;
             validation.required_spec_claims.clear();
             match decode::<ServiceRequest>(&service_request_jws, &decoding_key, &validation) {
                 Ok(service_request_claims) => {

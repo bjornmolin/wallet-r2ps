@@ -5,7 +5,6 @@ use crate::domain::value_objects::r2ps::PakeResponsePayload;
 use crate::domain::{R2psRequest, R2psResponse, ServiceRequestError, ServiceResponse};
 use base64::Engine;
 use base64::prelude::BASE64_STANDARD;
-use chrono::Utc;
 use std::sync::Arc;
 
 pub struct SessionEndOperation {
@@ -43,7 +42,7 @@ impl ServiceOperation for SessionEndOperation {
             task: None,
             response_data: Some(BASE64_STANDARD.encode(&msg)),
             message: None,
-            session_expiration_time: Some(Utc::now().timestamp_millis()),
+            expires_in: None,
         };
 
         Ok(R2psResponse {
