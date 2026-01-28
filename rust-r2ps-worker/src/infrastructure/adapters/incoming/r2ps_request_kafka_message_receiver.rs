@@ -8,7 +8,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread::{JoinHandle, spawn};
 use std::time::Duration;
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error, warn};
 
 pub struct R2psRequestKafkaMessageReceiver {
     r2ps_service: Arc<R2psService>,
@@ -57,7 +57,7 @@ impl R2psRequestKafkaMessageReceiver {
                 .subscribe(&["r2ps-requests"])
                 .expect("Failed to subscribe to topic");
 
-            info!("Starting Kafka consumer-producer pipeline...");
+            debug!("Starting Kafka consumer-producer pipeline...");
 
             while running.load(Ordering::Relaxed) {
                 match consumer.poll(Duration::from_millis(100)) {
@@ -97,7 +97,7 @@ impl R2psRequestKafkaMessageReceiver {
                         match r2ps_service.execute(r2ps_request) {
                             Ok(request_id) => {
                                 // Serialize output message to JSON
-                                info!("R2psRequest received {}", request_id);
+                                debug!("R2psRequest received {}", request_id);
                             }
                             Err(err) => {
                                 error!("Error processing message: {:?}", err);
@@ -112,10 +112,10 @@ impl R2psRequestKafkaMessageReceiver {
                     }
                 }
             }
-            info!("Unsubscribing...");
+            debug!("Unsubscribing...");
             consumer.unsubscribe();
             drop(consumer);
-            info!("Consumer shutdown complete");
+            debug!("Consumer shutdown complete");
         })
     }
 }

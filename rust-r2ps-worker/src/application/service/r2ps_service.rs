@@ -99,7 +99,7 @@ impl R2psService {
         encrypted_payload: &str,
         session_key: &SessionKey,
     ) -> Result<DecryptedData, Box<dyn std::error::Error>> {
-        info!("decoded service_data: {}", encrypted_payload);
+        debug!("decoded service_data: {}", encrypted_payload);
         debug!("decrypt with session key {:02X?}", session_key);
         let decrypter = DirectJweAlgorithm::Dir.decrypter_from_bytes(session_key.to_bytes())?;
         let (payload, _header) = jwe::deserialize_compact(encrypted_payload, &decrypter)?;
@@ -191,7 +191,7 @@ impl R2psRequestUseCase for R2psService {
             .map_err(R2psRequestError::ServiceError)?;
 
         let enc_option = service_request.service_type.encrypt_option();
-        info!(
+        debug!(
             "Response to {:?} will be encrypted with {:?} encryption",
             service_request.service_type, enc_option
         );
@@ -243,7 +243,7 @@ impl R2psRequestUseCase for R2psService {
         )
         .map_err(|_| R2psRequestError::JwsError)?;
 
-        info!(
+        debug!(
             "JWS response payload on {:?} {}",
             service_request.service_type, jws
         );
@@ -322,15 +322,15 @@ pub fn decrypt_service_data_jwe(
         .as_ref()
         .ok_or(ServiceRequestError::InvalidServiceRequestFormat)?;
 
-    info!("SERVICE DATA ******* {} ", service_data);
+    debug!("SERVICE DATA ******* {} ", service_data);
 
     let decrypter = ECDH_ES.decrypter_from_pem(pem::encode(server_private_key))?;
     let (payload, _) = jwe::deserialize_compact(service_data, &decrypter)?;
 
-    info!("decrypted JWS payload: {}", hex::encode(&payload));
+    debug!("decrypted JWS payload: {}", hex::encode(&payload));
 
     if let Ok(text) = String::from_utf8(payload.clone()) {
-        info!("decrypted JWS payload: {}", text);
+        debug!("decrypted JWS payload: {}", text);
     }
 
     Ok(DecryptedData::new(payload))
@@ -410,7 +410,7 @@ fn decode_state_jws(
             validation.insecure_disable_signature_validation();
             match decode::<DeviceHsmState>(&state_jws, &decoding_key, &validation) {
                 Ok(service_request_claims) => {
-                    info!("decoded claims: {:?}", service_request_claims);
+                    debug!("decoded claims: {:?}", service_request_claims);
                     Ok(service_request_claims.claims)
                 }
                 Err(error) => {
@@ -438,7 +438,7 @@ fn decode_service_request_jws(
             validation.required_spec_claims.clear();
             match decode::<ServiceRequest>(&service_request_jws, &decoding_key, &validation) {
                 Ok(service_request_claims) => {
-                    info!("decoded claims: {:?}", service_request_claims);
+                    debug!("decoded claims: {:?}", service_request_claims);
                     Ok(service_request_claims.claims)
                 }
                 Err(error) => {

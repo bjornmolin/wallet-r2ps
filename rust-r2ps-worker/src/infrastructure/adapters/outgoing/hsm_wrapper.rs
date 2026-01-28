@@ -15,7 +15,7 @@ use digest::Digest;
 use p256::ecdsa::VerifyingKey;
 use std::env;
 use std::sync::Arc;
-use tracing::{info, warn};
+use tracing::{debug, warn};
 
 pub struct HsmWrapper {
     pkcs11: Arc<Pkcs11>,
@@ -58,7 +58,7 @@ impl Pkcs11Config {
 
 impl HsmWrapper {
     pub fn new(config: Pkcs11Config) -> Result<Self, Box<dyn std::error::Error>> {
-        info!("Creating HSM wrapper with config {:?}", config);
+        debug!("Creating HSM wrapper with config {:?}", config);
         // 1. Initialize the PKCS#11 context
         let pkcs11 = Arc::new(Pkcs11::new(config.lib_path)?);
 
@@ -71,7 +71,7 @@ impl HsmWrapper {
         //let slot_id = slots[config.slot_index].id();
         let slot = slots[config.slot_index];
 
-        info!("Slot index {} is {}.", config.slot_index, slot);
+        debug!("Slot index {} is {}.", config.slot_index, slot);
         // initialize a test token
         let so_pin = config.so_pin.map(AuthPin::new);
         let user_pin = config.user_pin.map(AuthPin::new);
@@ -286,7 +286,7 @@ impl HsmSpiPort for HsmWrapper {
 
 impl Drop for HsmWrapper {
     fn drop(&mut self) {
-        info!("HsmWrapper dropped. PKCS#11 context will finalize when all Arcs are dropped.");
+        debug!("HsmWrapper dropped. PKCS#11 context will finalize when all Arcs are dropped.");
     }
 }
 

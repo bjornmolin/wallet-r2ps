@@ -7,7 +7,7 @@ use crate::domain::{
     SignRequest,
 };
 use std::sync::Arc;
-use tracing::info;
+use tracing::debug;
 
 pub struct HsmEcdsaSignOperation {
     hsm_spi_port: Arc<dyn HsmSpiPort + Send + Sync>,
@@ -47,7 +47,7 @@ impl ServiceOperation for HsmEcdsaSignOperation {
             .map_err(|_| ServiceRequestError::Unknown)?;
         let asn1_signature: Vec<u8> = signature.to_der().as_bytes().to_vec();
 
-        info!("Hsm Ecdsa asn1_signature: {:?}", asn1_signature);
+        debug!("Hsm Ecdsa asn1_signature: {:?}", asn1_signature);
 
         Ok(R2psResponse {
             state: r2ps_request.state,

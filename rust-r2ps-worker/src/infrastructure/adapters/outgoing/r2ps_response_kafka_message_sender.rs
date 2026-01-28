@@ -4,7 +4,7 @@ use crate::infrastructure::KafkaConfig;
 use rdkafka::ClientConfig;
 use rdkafka::producer::{BaseProducer, BaseRecord};
 use std::time::Duration;
-use tracing::{error, info};
+use tracing::{debug, error};
 
 pub struct R2psResponseKafkaMessageSender {
     producer: BaseProducer,
@@ -36,7 +36,7 @@ impl R2psResponseSpiPort for R2psResponseKafkaMessageSender {
                 match self.producer.send(record) {
                     Ok(_) => {
                         // Message enqueued successfully
-                        info!("Message sent: key='{}' request_id='{}'", key, request_id);
+                        debug!("Message sent: key='{}' request_id='{}'", key, request_id);
                         Ok(())
                     }
                     Err((err, _)) => {
