@@ -144,7 +144,7 @@ impl ServiceOperation for AuthenticateOperation {
                     task: None,
                     response_data: Some(BASE64_STANDARD.encode(credential_response_bytes)),
                     message: None,
-                    session_expiration_time: None,
+                    expires_in: None,
                 };
 
                 let elapsed = start.elapsed();
@@ -215,7 +215,7 @@ impl ServiceOperation for AuthenticateOperation {
                     task: None,
                     response_data: Some(BASE64_STANDARD.encode(&msg)),
                     message: None,
-                    session_expiration_time: Some(to_iso8601_duration(session_remaining_ttl)),
+                    expires_in: Some(to_iso8601_duration(session_remaining_ttl)),
                 };
 
                 let elapsed = start.elapsed();
@@ -300,7 +300,7 @@ impl ServiceOperation for PinRegistrationOperation {
                     task: None,
                     response_data: Some(BASE64_STANDARD.encode(response_data)),
                     message: None,
-                    session_expiration_time: None,
+                    expires_in: None,
                 };
 
                 Ok(R2psResponse {
@@ -334,7 +334,7 @@ impl ServiceOperation for PinRegistrationOperation {
                     task: None,
                     response_data: Some(BASE64_STANDARD.encode(&msg)),
                     message: None,
-                    session_expiration_time: None,
+                    expires_in: None,
                 };
 
                 Ok(R2psResponse {

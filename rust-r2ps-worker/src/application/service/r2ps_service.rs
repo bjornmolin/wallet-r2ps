@@ -373,7 +373,7 @@ fn jws_with_jwk(
     let claims = Claims {
         ver: "1.0".to_string(),
         nonce: nonce.unwrap().to_string(),
-        time_until_expiry: ttl.map(to_iso8601_duration),
+        expires_in: ttl.map(to_iso8601_duration),
         enc: enc.as_str().to_string(),
         data: STANDARD.encode(data),
     };

@@ -42,7 +42,7 @@ impl ServiceOperation for SessionEndOperation {
             task: None,
             response_data: Some(BASE64_STANDARD.encode(&msg)),
             message: None,
-            session_expiration_time: None,
+            expires_in: None,
         };
 
         Ok(R2psResponse {

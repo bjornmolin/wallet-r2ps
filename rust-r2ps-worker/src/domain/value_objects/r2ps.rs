@@ -182,8 +182,8 @@ pub struct PakeResponsePayload {
     #[serde(rename = "msg")]
     pub message: Option<String>,
 
-    #[serde(rename = "session_expiration_time")]
-    pub session_expiration_time: Option<iso8601_duration::Duration>,
+    #[serde(rename = "expires_in")]
+    pub expires_in: Option<iso8601_duration::Duration>,
 }
 
 #[derive(Serialize, Deserialize, ToSchema, Debug, Clone, Display)]
@@ -220,7 +220,7 @@ pub struct ListKeysResponse {
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct KeyInfo {
-    pub creation_time: Option<String>,
+    pub created_at: Option<String>,
     pub public_key: EcPublicJwk,
 }
 
@@ -262,7 +262,7 @@ pub struct Claims {
     pub ver: String,
     pub nonce: String,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub time_until_expiry: Option<iso8601_duration::Duration>,
+    pub expires_in: Option<iso8601_duration::Duration>,
     pub enc: String,
     pub data: String,
 }
