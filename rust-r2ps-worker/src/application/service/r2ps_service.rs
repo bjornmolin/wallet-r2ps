@@ -379,7 +379,6 @@ tnZuC45gAg6wZ0UGe9nCeM7wc0yhRANCAASnNDG5ct6I/LOK0wpBtRJU4PcDFv6X
 
     let token = encode(&header, &claims, &encoding_key).unwrap();
 
-    println!("JWS Token: {}", token);
     Ok(token)
 }
 
@@ -400,7 +399,6 @@ tnZuC45gAg6wZ0UGe9nCeM7wc0yhRANCAASnNDG5ct6I/LOK0wpBtRJU4PcDFv6X
 
     let token = encode(&header, &state, &encoding_key).unwrap();
 
-    println!("JWS Token: {}", token);
     Ok(token)
 }
 
