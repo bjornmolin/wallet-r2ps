@@ -1,4 +1,3 @@
-use crate::application::helpers::ByteVector;
 use crate::application::hsm_spi_port::HsmSpiPort;
 use crate::application::pending_auth_spi_port::PendingAuthSpiPort;
 use crate::application::session_key_spi_port::{SessionKey, SessionKeySpiPort};
@@ -15,7 +14,6 @@ use crate::infrastructure::ec_jwk_to_pem;
 use argon2::password_hash::rand_core::OsRng;
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD;
-use base64::prelude::BASE64_STANDARD;
 use josekit::jwe;
 use josekit::jwe::alg::direct::DirectJweAlgorithm;
 use josekit::jwe::{ECDH_ES, JweHeader};
@@ -101,27 +99,11 @@ impl R2psService {
         encrypted_payload: &str,
         session_key: &SessionKey,
     ) -> Result<DecryptedData, Box<dyn std::error::Error>> {
-        match BASE64_STANDARD.decode(encrypted_payload) {
-            Ok(data) => {
-                // Cast to ByteVector for better debug logging. Remove casting if/when logging is removed.
-                // TODO: Only log the bytes if it can't be decoded to UTF-8 (in which case it will be logged as UTF-8)
-                let vec = ByteVector::new(data);
-                info!("decoded service_data hex: {:02X?}", &vec);
-                match String::from_utf8(vec.to_vec()) {
-                    Ok(decoded_string) => {
-                        info!("decoded service_data utf8: {}", decoded_string);
-                        debug!("decrypt with session key {:02X?}", session_key);
-                        let decrypter =
-                            DirectJweAlgorithm::Dir.decrypter_from_bytes(session_key.to_bytes())?;
-                        let (payload, _header) =
-                            josekit::jwe::deserialize_compact(&decoded_string, &decrypter)?;
-                        Ok(DecryptedData::new(payload))
-                    }
-                    Err(_) => Err(Box::new(std::io::Error::other("Failed to decode UTF-8"))),
-                }
-            }
-            Err(_) => Err(Box::new(std::io::Error::other("Failed to decode base64"))),
-        }
+        info!("decoded service_data: {}", encrypted_payload);
+        debug!("decrypt with session key {:02X?}", session_key);
+        let decrypter = DirectJweAlgorithm::Dir.decrypter_from_bytes(session_key.to_bytes())?;
+        let (payload, _header) = jwe::deserialize_compact(encrypted_payload, &decrypter)?;
+        Ok(DecryptedData::new(payload))
     }
 
     fn decrypt_service_data(
@@ -342,9 +324,8 @@ pub fn decrypt_service_data_jwe(
 
     info!("SERVICE DATA ******* {} ", service_data);
 
-    let decoded_string = String::from_utf8(BASE64_STANDARD.decode(service_data)?)?;
     let decrypter = ECDH_ES.decrypter_from_pem(pem::encode(server_private_key))?;
-    let (payload, _) = jwe::deserialize_compact(&decoded_string, &decrypter)?;
+    let (payload, _) = jwe::deserialize_compact(service_data, &decrypter)?;
 
     info!("decrypted JWS payload: {}", hex::encode(&payload));
 
