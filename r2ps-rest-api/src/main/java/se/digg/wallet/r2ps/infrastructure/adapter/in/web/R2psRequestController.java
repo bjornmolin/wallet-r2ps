@@ -35,8 +35,6 @@ import se.digg.wallet.r2ps.domain.model.R2psRequest;
 import se.digg.wallet.r2ps.domain.model.R2psResponse;
 import se.digg.wallet.r2ps.infrastructure.adapter.dto.ErrorCode;
 import se.digg.wallet.r2ps.infrastructure.adapter.dto.ErrorMessageDtoBuilder;
-import se.digg.wallet.r2ps.infrastructure.adapter.dto.R2psRequestDto;
-import se.digg.wallet.r2ps.infrastructure.adapter.dto.R2psResponseDto;
 import se.digg.wallet.r2ps.infrastructure.adapter.in.messaging.R2psResponseReadyMessageReceiver;
 import se.digg.wallet.r2ps.infrastructure.config.Config;
 import se.digg.wallet.r2ps.infrastructure.service.UrlFormatterService;
@@ -143,7 +141,7 @@ public class R2psRequestController {
       logServiceRequest(serviceRequestJws);
     }
     JWSObject jwsObject = JWSObject.parse(serviceRequestJws);
-    ServiceRequest serviceRequest = (ServiceRequest) objectMapper
+    ServiceRequest serviceRequest = objectMapper
         .readValue(jwsObject.getPayload().toString(), ServiceRequest.class);
 
     UUID deviceId = UUID.fromString(serviceRequest.getClientID());

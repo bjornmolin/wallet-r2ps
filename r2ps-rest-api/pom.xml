@@ -37,7 +37,6 @@
         <jackson.version>2.19.2</jackson.version>
         <springboot.version>3.5.7</springboot.version>
         <wallet-r2ps.version>0.0.1-SNAPSHOT</wallet-r2ps.version>
-        <r2ps-base.version>0.6.1-SNAPSHOT</r2ps-base.version>
     </properties>
     <dependencies>
         <dependency>
@@ -102,12 +101,6 @@
             <version>${record-builder.version}</version>
             <scope>provided</scope>
         </dependency>
-        <dependency>
-            <groupId>se.digg.wallet</groupId>
-            <artifactId>r2ps-commons</artifactId>
-            <version>${r2ps-base.version}</version>
-        </dependency>
-
     </dependencies>
 
     <build>
