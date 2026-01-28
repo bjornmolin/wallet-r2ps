@@ -154,6 +154,11 @@ impl R2psRequestUseCase for R2psService {
             decode_service_request_jws(r2ps_request_jws.service_request_jws, &client_public_key)
                 .map_err(|_| R2psRequestError::JwsError)?;
 
+        info!(
+            "Received request id {}, wallet_id {}",
+            r2ps_request_jws.request_id, r2ps_request_jws.wallet_id
+        );
+
         debug!("DECODED JWS {:?}", service_request);
 
         if service_request.context != "hsm" {
@@ -175,6 +180,11 @@ impl R2psRequestUseCase for R2psService {
             .map(|_| self.decrypt_service_data(&service_request, session_key.as_ref()))
             .transpose()
             .map_err(R2psRequestError::ServiceError)?;
+
+        info!(
+            "Processing request id {} of type {:?}",
+            r2ps_request_jws.request_id, service_request.service_type
+        );
 
         let r2ps_response = self
             .operation_dispatcher
@@ -256,6 +266,8 @@ impl R2psRequestUseCase for R2psService {
             state_jws: new_state_jws,
             service_response_jws: jws,
         };
+
+        info!("Responding to request id {}", r2ps_request_jws.request_id);
 
         self.r2ps_response_spi_port
             .send(r2ps_response_jws.clone())

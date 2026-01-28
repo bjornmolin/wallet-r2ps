@@ -53,6 +53,9 @@ pub fn run() {
     let r2ps_kafka_receiver = R2psRequestKafkaMessageReceiver::new(r2ps_service, running.clone());
     // start worker i.e. process requests to responses
     let join_handle = r2ps_kafka_receiver.start_worker_thread(cfg.clone());
+
+    info!("HSM worker started");
+
     // wait until worker thread finish
     let _ = join_handle.join();
 }
