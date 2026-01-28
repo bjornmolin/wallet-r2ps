@@ -1,3 +1,4 @@
+use crate::application::helpers::debug_log_payload;
 use crate::application::hsm_spi_port::HsmSpiPort;
 use crate::application::pending_auth_spi_port::PendingAuthSpiPort;
 use crate::application::session_key_spi_port::{SessionKey, SessionKeySpiPort};
@@ -181,6 +182,10 @@ impl R2psRequestUseCase for R2psService {
             .transpose()
             .map_err(R2psRequestError::ServiceError)?;
 
+        if let Some(ref data) = decrypted_service_data {
+            debug_log_payload(data.as_ref(), "Decrypted service_data");
+        }
+
         info!(
             "Processing request id {} of type {:?}",
             r2ps_request_jws.request_id, service_request.service_type
@@ -211,16 +216,7 @@ impl R2psRequestUseCase for R2psService {
             .serialize()
             .map_err(|_| R2psRequestError::EncryptionError)?;
 
-        match response_payload.first() == Some(&b'{') && response_payload.last() == Some(&b'}') {
-            true => debug!(
-                "JSON Response payload before encryption: {}",
-                String::from_utf8_lossy(&response_payload)
-            ),
-            false => debug!(
-                "Response payload before encryption (hex): {:02X?}",
-                r2ps_response
-            ),
-        }
+        debug_log_payload(&response_payload, "Response payload before encryption");
 
         let new_state_jws =
             encode_state_jws(&r2ps_response.state, None).map_err(|_| R2psRequestError::JwsError)?;
