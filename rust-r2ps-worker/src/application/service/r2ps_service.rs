@@ -162,6 +162,7 @@ impl R2psRequestUseCase for R2psService {
 
         debug!("Decoded JWS request: {:#?}", service_request);
 
+        // TODO: Use JOSE 'aud' (audience) claim in the validation done inside decode_service_request_jws() instead
         if service_request.context != "hsm" {
             return Err(R2psRequestError::UnsupportedContext);
         }
