@@ -1,4 +1,3 @@
-use crate::domain::Curve;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -28,7 +27,6 @@ impl std::fmt::Debug for WrappedPrivateKey {
 pub struct HsmKey {
     pub wrapped_private_key: WrappedPrivateKey,
     pub public_key_jwk: EcPublicJwk,
-    pub curve_name: Curve,
     pub created_at: chrono::DateTime<chrono::Utc>,
 }
 
