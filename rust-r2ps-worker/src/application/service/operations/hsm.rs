@@ -35,7 +35,7 @@ impl ServiceOperation for HsmEcdsaSignOperation {
 
         let raw_sig_bytes = self
             .hsm_spi_port
-            .sign(&hsm_key.wrapped_private_key, &sign_request.tbs_hash)
+            .sign(&hsm_key, &sign_request.tbs_hash)
             .map_err(|_| ServiceRequestError::Unknown)?;
 
         let signature = p256::ecdsa::Signature::from_slice(&raw_sig_bytes)

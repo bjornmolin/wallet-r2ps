@@ -37,7 +37,7 @@ fn gen_ecc_key_wrap_unwrap_sign() -> Result<(), Box<dyn std::error::Error>> {
     let hsm_key = hsm_wrapper.generate_key(message, &Curve::P256)?;
 
     let digest = Sha256::digest(message);
-    let signature = hsm_wrapper.sign(&hsm_key.wrapped_private_key, &digest.to_vec());
+    let signature = hsm_wrapper.sign(&hsm_key, &digest.to_vec());
 
     let ec_public_jwk = &hsm_key.public_key_jwk;
     let x_bytes = BASE64_URL_SAFE_NO_PAD.decode(&ec_public_jwk.x)?;

@@ -22,5 +22,5 @@ pub trait HsmSpiPort {
         curve: &Curve,
     ) -> Result<HsmKey, Box<dyn std::error::Error>>;
 
-    fn sign(&self, wrapped_key: &[u8], sign_payload: &[u8]) -> Result<Vec<u8>, Error>;
+    fn sign(&self, key: &HsmKey, sign_payload: &[u8]) -> Result<Vec<u8>, Error>;
 }
