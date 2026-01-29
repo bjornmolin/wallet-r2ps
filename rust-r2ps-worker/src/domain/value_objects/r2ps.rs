@@ -112,8 +112,10 @@ impl ServiceResponse {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ServiceTypeId {
-    Authenticate,
-    PinRegistration,
+    AuthenticateStart,
+    AuthenticateFinish,
+    RegisterStart,
+    RegisterFinish,
     PinChange,
     HsmEcdsa,
     HsmEcdh,
@@ -141,8 +143,10 @@ pub enum EncryptOption {
 impl ServiceTypeId {
     pub fn encrypt_option(&self) -> EncryptOption {
         match self {
-            ServiceTypeId::Authenticate => EncryptOption::Device,
-            ServiceTypeId::PinRegistration => EncryptOption::Device,
+            ServiceTypeId::AuthenticateStart => EncryptOption::Device,
+            ServiceTypeId::AuthenticateFinish => EncryptOption::Device,
+            ServiceTypeId::RegisterStart => EncryptOption::Device,
+            ServiceTypeId::RegisterFinish => EncryptOption::Device,
             ServiceTypeId::PinChange => EncryptOption::User,
             ServiceTypeId::HsmEcdsa => EncryptOption::User,
             ServiceTypeId::HsmEcdh => EncryptOption::User,
@@ -285,11 +289,6 @@ pub struct PakeRequestPayload {
     /// Identifies the PAKE protocol
     #[serde(rename = "protocol")]
     pub protocol: PakeProtocol,
-
-    /// Identifies the PAKE state which determines the data content.
-    /// E.g., evaluate or finalize for OPAQUE
-    #[serde(rename = "state")]
-    pub state: PakeState,
 
     /// Optional authorization data required for initial PIN registrations or PIN resets
     #[serde(rename = "authorization", skip_serializing_if = "Option::is_none")]

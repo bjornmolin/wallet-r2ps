@@ -13,7 +13,10 @@ use opaque_ke::ServerSetup;
 use std::sync::Arc;
 use tracing::debug;
 
-use authentication::{AuthenticateOperation, PinRegistrationOperation};
+use authentication::{
+    AuthenticateFinishOperation, AuthenticateStartOperation, RegisterFinishOperation,
+    RegisterStartOperation,
+};
 use hsm::{HsmDeleteKeyOperation, HsmEcdsaSignOperation, HsmKeygenOperation, HsmListKeysOperation};
 use session::SessionEndOperation;
 
@@ -28,8 +31,10 @@ pub trait ServiceOperation {
 
 /// Contains all operation handlers
 pub struct OperationDispatcher {
-    authenticate_op: AuthenticateOperation,
-    pin_registration_op: PinRegistrationOperation,
+    authenticate_start_op: AuthenticateStartOperation,
+    authenticate_finish_op: AuthenticateFinishOperation,
+    register_start_op: RegisterStartOperation,
+    register_finish_op: RegisterFinishOperation,
     hsm_ecdsa_op: HsmEcdsaSignOperation,
     hsm_keygen_op: HsmKeygenOperation,
     hsm_delete_key_op: HsmDeleteKeyOperation,
@@ -46,12 +51,16 @@ impl OperationDispatcher {
         pending_auth_spi_port: Arc<dyn PendingAuthSpiPort + Send + Sync>,
     ) -> Self {
         Self {
-            authenticate_op: AuthenticateOperation::new(
+            authenticate_start_op: AuthenticateStartOperation::new(
                 server_setup.clone(),
-                session_key_spi_port.clone(),
                 pending_auth_spi_port.clone(),
             ),
-            pin_registration_op: PinRegistrationOperation::new(server_setup.clone()),
+            authenticate_finish_op: AuthenticateFinishOperation::new(
+                pending_auth_spi_port.clone(),
+                session_key_spi_port.clone(),
+            ),
+            register_start_op: RegisterStartOperation::new(server_setup.clone()),
+            register_finish_op: RegisterFinishOperation::new(),
             hsm_ecdsa_op: HsmEcdsaSignOperation::new(hsm_spi_port.clone()),
             hsm_keygen_op: HsmKeygenOperation::new(hsm_spi_port.clone()),
             hsm_delete_key_op: HsmDeleteKeyOperation,
@@ -72,11 +81,17 @@ impl OperationDispatcher {
         );
 
         match r2ps_request.service_request.service_type {
-            ServiceTypeId::Authenticate => self
-                .authenticate_op
+            ServiceTypeId::AuthenticateStart => self
+                .authenticate_start_op
                 .execute(r2ps_request, decrypted_service_data),
-            ServiceTypeId::PinRegistration => self
-                .pin_registration_op
+            ServiceTypeId::AuthenticateFinish => self
+                .authenticate_finish_op
+                .execute(r2ps_request, decrypted_service_data),
+            ServiceTypeId::RegisterStart => self
+                .register_start_op
+                .execute(r2ps_request, decrypted_service_data),
+            ServiceTypeId::RegisterFinish => self
+                .register_finish_op
                 .execute(r2ps_request, decrypted_service_data),
             ServiceTypeId::HsmEcdsa => self
                 .hsm_ecdsa_op
