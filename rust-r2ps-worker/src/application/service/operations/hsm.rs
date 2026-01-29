@@ -3,7 +3,7 @@ use crate::application::hsm_spi_port::HsmSpiPort;
 use crate::application::service::r2ps_service::DecryptedData;
 use crate::domain::{
     CreateKeyServiceData, CreateKeyServiceDataResponse, DeleteKeyServiceData, DeviceHsmState,
-    KeyInfo, ListKeysResponse, R2psRequest, R2psResponse, ServiceRequestError, ServiceResponse,
+    KeyInfo, ListKeysResponse, OuterResponse, R2psRequest, R2psResponse, ServiceRequestError,
     SignRequest,
 };
 use std::sync::Arc;
@@ -23,10 +23,9 @@ impl ServiceOperation for HsmEcdsaSignOperation {
     fn execute(
         &self,
         r2ps_request: R2psRequest,
-        decrypted_service_data: Option<DecryptedData>,
+        inner_request_json: Option<DecryptedData>,
     ) -> Result<R2psResponse, ServiceRequestError> {
-        let data =
-            decrypted_service_data.ok_or(ServiceRequestError::InvalidServiceRequestFormat)?;
+        let data = inner_request_json.ok_or(ServiceRequestError::InvalidServiceRequestFormat)?;
         let sign_request = serde_json::from_slice::<SignRequest>(&data)
             .map_err(|_| ServiceRequestError::InvalidServiceRequestFormat)?;
 
@@ -51,7 +50,7 @@ impl ServiceOperation for HsmEcdsaSignOperation {
 
         Ok(R2psResponse {
             state: r2ps_request.state,
-            payload: ServiceResponse::Asn1Signature(asn1_signature),
+            payload: OuterResponse::Asn1Signature(asn1_signature),
         })
     }
 }
@@ -70,10 +69,9 @@ impl ServiceOperation for HsmKeygenOperation {
     fn execute(
         &self,
         r2ps_request: R2psRequest,
-        decrypted_service_data: Option<DecryptedData>,
+        inner_request_json: Option<DecryptedData>,
     ) -> Result<R2psResponse, ServiceRequestError> {
-        let data =
-            decrypted_service_data.ok_or(ServiceRequestError::InvalidServiceRequestFormat)?;
+        let data = inner_request_json.ok_or(ServiceRequestError::InvalidServiceRequestFormat)?;
         let payload = serde_json::from_slice::<CreateKeyServiceData>(&data)
             .map_err(|_| ServiceRequestError::InvalidServiceRequestFormat)?;
 
@@ -95,7 +93,7 @@ impl ServiceOperation for HsmKeygenOperation {
 
         Ok(R2psResponse {
             state: new_state,
-            payload: ServiceResponse::CreateKey(CreateKeyServiceDataResponse {
+            payload: OuterResponse::CreateKey(CreateKeyServiceDataResponse {
                 public_key: hsm_key.public_key_jwk,
             }),
         })
@@ -108,10 +106,9 @@ impl ServiceOperation for HsmDeleteKeyOperation {
     fn execute(
         &self,
         r2ps_request: R2psRequest,
-        decrypted_service_data: Option<DecryptedData>,
+        inner_request_json: Option<DecryptedData>,
     ) -> Result<R2psResponse, ServiceRequestError> {
-        let data =
-            decrypted_service_data.ok_or(ServiceRequestError::InvalidServiceRequestFormat)?;
+        let data = inner_request_json.ok_or(ServiceRequestError::InvalidServiceRequestFormat)?;
         let payload = serde_json::from_slice::<DeleteKeyServiceData>(&data)
             .map_err(|_| ServiceRequestError::InvalidServiceRequestFormat)?;
 
@@ -130,7 +127,7 @@ impl ServiceOperation for HsmDeleteKeyOperation {
 
         Ok(R2psResponse {
             state: new_state,
-            payload: ServiceResponse::DeleteKey(DeleteKeyServiceData { kid: payload.kid }),
+            payload: OuterResponse::DeleteKey(DeleteKeyServiceData { kid: payload.kid }),
         })
     }
 }
@@ -141,7 +138,7 @@ impl ServiceOperation for HsmListKeysOperation {
     fn execute(
         &self,
         r2ps_request: R2psRequest,
-        _decrypted_service_data: Option<DecryptedData>,
+        _inner_request_json: Option<DecryptedData>,
     ) -> Result<R2psResponse, ServiceRequestError> {
         let list_keys = ListKeysResponse {
             key_info: r2ps_request
@@ -157,7 +154,7 @@ impl ServiceOperation for HsmListKeysOperation {
 
         Ok(R2psResponse {
             state: r2ps_request.state,
-            payload: ServiceResponse::ListKeys(list_keys),
+            payload: OuterResponse::ListKeys(list_keys),
         })
     }
 }

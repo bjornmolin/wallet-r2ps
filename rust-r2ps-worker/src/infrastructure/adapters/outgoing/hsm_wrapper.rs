@@ -20,7 +20,7 @@ use tracing::{debug, warn};
 pub struct HsmWrapper {
     pkcs11: Arc<Pkcs11>,
     slot: Slot,
-    so_pin: Option<AuthPin>,
+    _so_pin: Option<AuthPin>,
     user_pin: Option<AuthPin>,
     wrap_key_alias: Vec<u8>,
 }
@@ -86,7 +86,7 @@ impl HsmWrapper {
             pkcs11,
             slot,
             wrap_key_alias,
-            so_pin,
+            _so_pin: so_pin,
             user_pin,
         };
 
@@ -96,9 +96,9 @@ impl HsmWrapper {
         Ok(result)
     }
 
-    fn init_token_and_pin(&self) -> Result<(), Box<dyn std::error::Error>> {
+    fn _init_token_and_pin(&self) -> Result<(), Box<dyn std::error::Error>> {
         let session = self.pkcs11.open_rw_session(self.slot)?;
-        session.login(UserType::So, self.so_pin.as_ref())?;
+        session.login(UserType::So, self._so_pin.as_ref())?;
         if let Some(ref user_pin) = self.user_pin {
             session.init_pin(user_pin)?;
         }

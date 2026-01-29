@@ -90,7 +90,7 @@ impl R2psRequestKafkaMessageReceiver {
                             wallet_id: r2ps_request_dto.wallet_id,
                             device_id: r2ps_request_dto.device_id,
                             state_jws: r2ps_request_dto.state_jws,
-                            service_request_jws: r2ps_request_dto.service_request_jws,
+                            outer_request_jws: r2ps_request_dto.service_request_jws,
                         };
 
                         // Process the message (example: convert to uppercase)

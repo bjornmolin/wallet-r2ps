@@ -4,8 +4,8 @@ use crate::application::service::r2ps_service::DecryptedData;
 use crate::application::session_key_spi_port::{SessionKey, SessionKeySpiPort};
 use crate::domain::value_objects::r2ps::{PakeRequestPayload, PakeResponsePayload};
 use crate::domain::{
-    DefaultCipherSuite, DeviceHsmState, R2psRequest, R2psResponse, ServiceRequestError,
-    ServiceResponse, to_iso8601_duration,
+    DefaultCipherSuite, DeviceHsmState, OuterResponse, PasswordFile, R2psRequest, R2psResponse,
+    ServiceRequestError, to_iso8601_duration,
 };
 use argon2::password_hash::rand_core::OsRng;
 use base64::Engine;
@@ -42,11 +42,10 @@ impl ServiceOperation for AuthenticateStartOperation {
     fn execute(
         &self,
         r2ps_request: R2psRequest,
-        decrypted_service_data: Option<DecryptedData>,
+        inner_request_json: Option<DecryptedData>,
     ) -> Result<R2psResponse, ServiceRequestError> {
         let start = Instant::now();
-        let data =
-            decrypted_service_data.ok_or(ServiceRequestError::InvalidServiceRequestFormat)?;
+        let data = inner_request_json.ok_or(ServiceRequestError::InvalidServiceRequestFormat)?;
         let pake_payload = PakeRequestPayload::deserialize(data.to_vec()).map_err(|e| {
             warn!("error decoding pake request: {:?}", e);
             ServiceRequestError::InvalidPakeRequestPayload
@@ -67,13 +66,15 @@ impl ServiceOperation for AuthenticateStartOperation {
         let password_file_serialized = r2ps_request
             .state
             .password_file
+            .as_ref()
             .ok_or(ServiceRequestError::UnknownClient)?;
-        let password_file =
-            ServerRegistration::<DefaultCipherSuite>::deserialize(&password_file_serialized)
-                .map_err(|e| {
-                    warn!("error decoding pake request: {:?}", e);
-                    ServiceRequestError::InvalidSerializedPasswordFile
-                })?;
+        let password_file = ServerRegistration::<DefaultCipherSuite>::deserialize(
+            password_file_serialized.as_bytes(),
+        )
+        .map_err(|e| {
+            warn!("error decoding pake request: {:?}", e);
+            ServiceRequestError::InvalidSerializedPasswordFile
+        })?;
         let credential_request =
             CredentialRequest::deserialize(&decoded_request_data).map_err(|e| {
                 warn!("error decoding pake request: {:?}", e);
@@ -124,7 +125,7 @@ impl ServiceOperation for AuthenticateStartOperation {
 
         let credential_response_bytes = server_login_start_result.message.serialize();
         let pake_session_id = r2ps_request
-            .service_request
+            .outer_request
             .pake_session_id
             .clone()
             .unwrap_or(Uuid::new_v4().to_string());
@@ -147,7 +148,7 @@ impl ServiceOperation for AuthenticateStartOperation {
 
         Ok(R2psResponse {
             state: r2ps_request.state.clone(),
-            payload: ServiceResponse::Pake(pake_response),
+            payload: OuterResponse::Pake(pake_response),
         })
     }
 }
@@ -174,11 +175,10 @@ impl ServiceOperation for AuthenticateFinishOperation {
     fn execute(
         &self,
         r2ps_request: R2psRequest,
-        decrypted_service_data: Option<DecryptedData>,
+        inner_request_json: Option<DecryptedData>,
     ) -> Result<R2psResponse, ServiceRequestError> {
         let start = Instant::now();
-        let data =
-            decrypted_service_data.ok_or(ServiceRequestError::InvalidServiceRequestFormat)?;
+        let data = inner_request_json.ok_or(ServiceRequestError::InvalidServiceRequestFormat)?;
         let pake_payload = PakeRequestPayload::deserialize(data.to_vec()).map_err(|e| {
             warn!("error decoding pake request: {:?}", e);
             ServiceRequestError::InvalidPakeRequestPayload
@@ -195,7 +195,7 @@ impl ServiceOperation for AuthenticateFinishOperation {
             .pending_auth_spi_port
             .get_pending_auth(
                 r2ps_request
-                    .service_request
+                    .outer_request
                     .pake_session_id
                     .clone()
                     .ok_or(ServiceRequestError::UnknownSession)?
@@ -231,7 +231,7 @@ impl ServiceOperation for AuthenticateFinishOperation {
         debug!("SESSION KEY: {:X}", result.session_key);
 
         let pake_session_id = r2ps_request
-            .service_request
+            .outer_request
             .pake_session_id
             .clone()
             .ok_or(ServiceRequestError::UnknownSession)?;
@@ -246,7 +246,7 @@ impl ServiceOperation for AuthenticateFinishOperation {
 
         let msg = br#"{"msg":"OK"}"#.to_vec();
         let pake_response = PakeResponsePayload {
-            pake_session_id: r2ps_request.service_request.pake_session_id.clone(),
+            pake_session_id: r2ps_request.outer_request.pake_session_id.clone(),
             task: None,
             response_data: Some(BASE64_STANDARD.encode(&msg)),
             message: None,
@@ -258,7 +258,7 @@ impl ServiceOperation for AuthenticateFinishOperation {
 
         Ok(R2psResponse {
             state: r2ps_request.state.clone(),
-            payload: ServiceResponse::Pake(pake_response),
+            payload: OuterResponse::Pake(pake_response),
         })
     }
 }
@@ -280,10 +280,9 @@ impl ServiceOperation for RegisterStartOperation {
     fn execute(
         &self,
         r2ps_request: R2psRequest,
-        decrypted_service_data: Option<DecryptedData>,
+        inner_request_json: Option<DecryptedData>,
     ) -> Result<R2psResponse, ServiceRequestError> {
-        let data =
-            decrypted_service_data.ok_or(ServiceRequestError::InvalidServiceRequestFormat)?;
+        let data = inner_request_json.ok_or(ServiceRequestError::InvalidServiceRequestFormat)?;
         let pake_payload = PakeRequestPayload::deserialize(data.to_vec()).map_err(|e| {
             warn!("error decoding pake registration request: {:?}", e);
             ServiceRequestError::InvalidPakeRequestPayload
@@ -336,7 +335,7 @@ impl ServiceOperation for RegisterStartOperation {
 
         Ok(R2psResponse {
             state: r2ps_request.state,
-            payload: ServiceResponse::Pake(pake_response),
+            payload: OuterResponse::Pake(pake_response),
         })
     }
 }
@@ -354,10 +353,9 @@ impl ServiceOperation for RegisterFinishOperation {
     fn execute(
         &self,
         r2ps_request: R2psRequest,
-        decrypted_service_data: Option<DecryptedData>,
+        inner_request_json: Option<DecryptedData>,
     ) -> Result<R2psResponse, ServiceRequestError> {
-        let data =
-            decrypted_service_data.ok_or(ServiceRequestError::InvalidServiceRequestFormat)?;
+        let data = inner_request_json.ok_or(ServiceRequestError::InvalidServiceRequestFormat)?;
         let pake_payload = PakeRequestPayload::deserialize(data.to_vec()).map_err(|e| {
             warn!("error decoding pake registration request: {:?}", e);
             ServiceRequestError::InvalidPakeRequestPayload
@@ -378,13 +376,16 @@ impl ServiceOperation for RegisterFinishOperation {
 
         let password_file = ServerRegistration::<DefaultCipherSuite>::finish(registration_request);
         let password_file_serialized = password_file.serialize();
-        debug!("password file: {:?}", hex::encode(password_file_serialized));
+        debug!(
+            "password file: {:?}",
+            hex::encode(&password_file_serialized)
+        );
 
         let new_state = DeviceHsmState {
             client_id: r2ps_request.state.client_id,
             wallet_id: r2ps_request.state.wallet_id,
             client_public_key: r2ps_request.state.client_public_key,
-            password_file: Some(password_file_serialized),
+            password_file: Some(PasswordFile(password_file_serialized)),
             keys: Vec::new(),
         };
 
@@ -399,7 +400,7 @@ impl ServiceOperation for RegisterFinishOperation {
 
         Ok(R2psResponse {
             state: new_state,
-            payload: ServiceResponse::Pake(pake_response),
+            payload: OuterResponse::Pake(pake_response),
         })
     }
 }

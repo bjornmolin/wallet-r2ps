@@ -7,7 +7,7 @@ use crate::application::pending_auth_spi_port::PendingAuthSpiPort;
 use crate::application::service::r2ps_service::DecryptedData;
 use crate::application::session_key_spi_port::SessionKeySpiPort;
 use crate::domain::{
-    DefaultCipherSuite, R2psRequest, R2psResponse, ServiceRequestError, ServiceTypeId,
+    DefaultCipherSuite, OperationId, R2psRequest, R2psResponse, ServiceRequestError,
 };
 use opaque_ke::ServerSetup;
 use std::sync::Arc;
@@ -25,7 +25,7 @@ pub trait ServiceOperation {
     fn execute(
         &self,
         r2ps_request: R2psRequest,
-        decrypted_service_data: Option<DecryptedData>,
+        inner_request_json: Option<DecryptedData>,
     ) -> Result<R2psResponse, ServiceRequestError>;
 }
 
@@ -73,49 +73,47 @@ impl OperationDispatcher {
     pub fn dispatch(
         &self,
         r2ps_request: R2psRequest,
-        decrypted_service_data: Option<DecryptedData>,
+        inner_request_json: Option<DecryptedData>,
     ) -> Result<R2psResponse, ServiceRequestError> {
         debug!(
-            "SERVICE TYPE REQUEST {:?}",
-            r2ps_request.service_request.service_type
+            "Requested Operation: {:?}",
+            r2ps_request.outer_request.service_type
         );
 
-        match r2ps_request.service_request.service_type {
-            ServiceTypeId::AuthenticateStart => self
+        match r2ps_request.outer_request.service_type {
+            OperationId::AuthenticateStart => self
                 .authenticate_start_op
-                .execute(r2ps_request, decrypted_service_data),
-            ServiceTypeId::AuthenticateFinish => self
+                .execute(r2ps_request, inner_request_json),
+            OperationId::AuthenticateFinish => self
                 .authenticate_finish_op
-                .execute(r2ps_request, decrypted_service_data),
-            ServiceTypeId::RegisterStart => self
+                .execute(r2ps_request, inner_request_json),
+            OperationId::RegisterStart => self
                 .register_start_op
-                .execute(r2ps_request, decrypted_service_data),
-            ServiceTypeId::RegisterFinish => self
+                .execute(r2ps_request, inner_request_json),
+            OperationId::RegisterFinish => self
                 .register_finish_op
-                .execute(r2ps_request, decrypted_service_data),
-            ServiceTypeId::HsmEcdsa => self
-                .hsm_ecdsa_op
-                .execute(r2ps_request, decrypted_service_data),
-            ServiceTypeId::HsmEcKeygen => self
-                .hsm_keygen_op
-                .execute(r2ps_request, decrypted_service_data),
-            ServiceTypeId::HsmEcDeleteKey => self
+                .execute(r2ps_request, inner_request_json),
+            OperationId::HsmEcdsa => self.hsm_ecdsa_op.execute(r2ps_request, inner_request_json),
+            OperationId::HsmEcKeygen => {
+                self.hsm_keygen_op.execute(r2ps_request, inner_request_json)
+            }
+            OperationId::HsmEcDeleteKey => self
                 .hsm_delete_key_op
-                .execute(r2ps_request, decrypted_service_data),
-            ServiceTypeId::HsmListKeys => self
+                .execute(r2ps_request, inner_request_json),
+            OperationId::HsmListKeys => self
                 .hsm_list_keys_op
-                .execute(r2ps_request, decrypted_service_data),
-            ServiceTypeId::SessionEnd => self
+                .execute(r2ps_request, inner_request_json),
+            OperationId::SessionEnd => self
                 .session_end_op
-                .execute(r2ps_request, decrypted_service_data),
-            ServiceTypeId::PinChange => Err(ServiceRequestError::Unknown),
-            ServiceTypeId::HsmEcdh => Err(ServiceRequestError::Unknown),
-            ServiceTypeId::SessionContextEnd => Err(ServiceRequestError::Unknown),
-            ServiceTypeId::Store => Err(ServiceRequestError::Unknown),
-            ServiceTypeId::Retrieve => Err(ServiceRequestError::Unknown),
-            ServiceTypeId::Log => Err(ServiceRequestError::Unknown),
-            ServiceTypeId::GetLog => Err(ServiceRequestError::Unknown),
-            ServiceTypeId::Info => Err(ServiceRequestError::Unknown),
+                .execute(r2ps_request, inner_request_json),
+            OperationId::PinChange => Err(ServiceRequestError::Unknown),
+            OperationId::HsmEcdh => Err(ServiceRequestError::Unknown),
+            OperationId::SessionContextEnd => Err(ServiceRequestError::Unknown),
+            OperationId::Store => Err(ServiceRequestError::Unknown),
+            OperationId::Retrieve => Err(ServiceRequestError::Unknown),
+            OperationId::Log => Err(ServiceRequestError::Unknown),
+            OperationId::GetLog => Err(ServiceRequestError::Unknown),
+            OperationId::Info => Err(ServiceRequestError::Unknown),
         }
     }
 }

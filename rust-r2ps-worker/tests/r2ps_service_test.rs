@@ -1,13 +1,11 @@
-use base64::Engine;
-use base64::prelude::BASE64_STANDARD;
 use josekit::jwe::ECDH_ES;
 use josekit::jwe::JweHeader;
 use p256::SecretKey;
 use p256::pkcs8::{EncodePrivateKey, EncodePublicKey};
-use rust_r2ps_worker::application::service::r2ps_service::decrypt_service_data_jwe;
-use rust_r2ps_worker::domain::EncryptOption::User;
+use rust_r2ps_worker::domain::EncryptOption::Device;
 use rust_r2ps_worker::domain::ServiceRequestError;
-use rust_r2ps_worker::domain::value_objects::r2ps::{ServiceRequest, ServiceTypeId};
+use rust_r2ps_worker::domain::value_objects::InnerJwe;
+use rust_r2ps_worker::domain::value_objects::r2ps::{OperationId, OuterRequest};
 
 #[test]
 fn test_decrypt_service_data_jwe_happy_path() -> Result<(), Box<dyn std::error::Error>> {
@@ -34,20 +32,25 @@ fn test_decrypt_service_data_jwe_happy_path() -> Result<(), Box<dyn std::error::
     let jwe_compact = josekit::jwe::serialize_compact(payload, &header, &encrypter)?;
 
     // Wrap the Base64 encoded payload in a ServiceRequest
-    let service_request = ServiceRequest {
+    let service_request = OuterRequest {
         client_id: "test-client".to_string(),
         kid: "test-kid".to_string(),
         context: "test-context".to_string(),
-        service_type: ServiceTypeId::Authenticate,
+        service_type: OperationId::AuthenticateStart,
         pake_session_id: None,
         version: None,
         nonce: None,
-        enc: Some(User),
-        service_data: Some(BASE64_STANDARD.encode(jwe_compact)),
+        enc: Some(Device),
+        inner_jwe: Some(InnerJwe::new(jwe_compact)),
     };
 
     // Decrypt the serviceRequest with the private key
-    let result_new = decrypt_service_data_jwe(&service_request, &server_private_key);
+    let result_new =
+        service_request
+            .inner_jwe
+            .as_ref()
+            .unwrap()
+            .decrypt(Device, &server_private_key, None);
     assert!(
         result_new.is_ok(),
         "decrypt_service_data_jwe failed: {:?}",
@@ -76,19 +79,24 @@ fn test_decrypt_service_data_jwe_rejects_invalid_formats() -> Result<(), Box<dyn
     ];
 
     for invalid_jwe in invalid_formats {
-        let service_request = ServiceRequest {
+        let service_request = OuterRequest {
             client_id: "test-client".to_string(),
             kid: "test-kid".to_string(),
             context: "test-context".to_string(),
-            service_type: ServiceTypeId::Authenticate,
+            service_type: OperationId::AuthenticateStart,
             pake_session_id: None,
             version: None,
             nonce: None,
-            enc: Some(User),
-            service_data: Some(BASE64_STANDARD.encode(invalid_jwe)),
+            enc: Some(Device),
+            inner_jwe: Some(InnerJwe::new(invalid_jwe.to_string())),
         };
 
-        let result = decrypt_service_data_jwe(&service_request, &server_private_key);
+        let result =
+            service_request
+                .inner_jwe
+                .as_ref()
+                .unwrap()
+                .decrypt(Device, &server_private_key, None);
 
         assert!(matches!(result, Err(ServiceRequestError::JweError)));
     }
@@ -104,19 +112,24 @@ fn test_decrypt_service_data_jwe_rejects_invalid_base64() -> Result<(), Box<dyn 
         .map_err(|e| format!("Failed to generate PEM: {}", e))?;
     let server_private_key = pem::parse(private_key_pem_string.as_bytes())?;
 
-    let service_request = ServiceRequest {
+    let service_request = OuterRequest {
         client_id: "test-client".to_string(),
         kid: "test-kid".to_string(),
         context: "test-context".to_string(),
-        service_type: ServiceTypeId::Authenticate,
+        service_type: OperationId::AuthenticateStart,
         pake_session_id: None,
         version: None,
         nonce: None,
-        enc: Some(User),
-        service_data: Some(BASE64_STANDARD.encode("not-base64!!".to_string())),
+        enc: Some(Device),
+        inner_jwe: Some(InnerJwe::new("not-base64!!".to_string())),
     };
 
-    let result = decrypt_service_data_jwe(&service_request, &server_private_key);
+    let result =
+        service_request
+            .inner_jwe
+            .as_ref()
+            .unwrap()
+            .decrypt(Device, &server_private_key, None);
     assert!(
         result.is_err(),
         "decrypt_service_data_jwe should reject invalid base64: {:?}",

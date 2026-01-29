@@ -38,7 +38,7 @@ pub struct R2psRequestJws {
     pub wallet_id: String, // remove later? device_id or client_id?
     pub device_id: String, // remove later? device_id or client_id?
     pub state_jws: String,
-    pub service_request_jws: String,
+    pub outer_request_jws: String,
 }
 
 // Define your output message structure
@@ -60,7 +60,7 @@ pub struct R2psRequest {
     pub wallet_id: String,     // remove later? device_id or client_id?
     pub device_id: String,     // remove later? device_id or client_id?
     pub state: DeviceHsmState, // change to jws later
-    pub service_request: ServiceRequest,
+    pub outer_request: OuterRequest,
 }
 
 // Define your output message structure
@@ -68,27 +68,26 @@ pub struct R2psRequest {
 #[serde(rename_all = "camelCase")]
 pub struct R2psResponse {
     pub state: DeviceHsmState, // change to jws later
-    pub payload: ServiceResponse,
+    pub payload: OuterResponse,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct ServiceRequest {
+pub struct OuterRequest {
     pub client_id: String,
     pub kid: String,
     pub context: String,
     #[serde(rename = "type")]
-    pub service_type: ServiceTypeId,
+    pub service_type: OperationId,
     pub pake_session_id: Option<String>,
     #[serde(rename = "ver")]
     pub version: Option<String>,
     pub nonce: Option<String>,
     pub enc: Option<EncryptOption>,
-    #[serde(rename = "data")]
-    pub service_data: Option<String>,
+    pub inner_jwe: Option<super::InnerJwe>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
-pub enum ServiceResponse {
+pub enum OuterResponse {
     Pake(PakeResponsePayload),
     CreateKey(CreateKeyServiceDataResponse),
     DeleteKey(DeleteKeyServiceData),
@@ -96,7 +95,7 @@ pub enum ServiceResponse {
     Asn1Signature(Vec<u8>),
 }
 
-impl ServiceResponse {
+impl OuterResponse {
     pub fn serialize(&self) -> Result<Vec<u8>, ServiceRequestError> {
         match self {
             Self::Pake(p) => serde_json::to_vec(p),
@@ -111,7 +110,7 @@ impl ServiceResponse {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum ServiceTypeId {
+pub enum OperationId {
     AuthenticateStart,
     AuthenticateFinish,
     RegisterStart,
@@ -140,26 +139,35 @@ pub enum EncryptOption {
     Device,
 }
 
-impl ServiceTypeId {
+impl EncryptOption {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            EncryptOption::User => "user",
+            EncryptOption::Device => "device",
+        }
+    }
+}
+
+impl OperationId {
     pub fn encrypt_option(&self) -> EncryptOption {
         match self {
-            ServiceTypeId::AuthenticateStart => EncryptOption::Device,
-            ServiceTypeId::AuthenticateFinish => EncryptOption::Device,
-            ServiceTypeId::RegisterStart => EncryptOption::Device,
-            ServiceTypeId::RegisterFinish => EncryptOption::Device,
-            ServiceTypeId::PinChange => EncryptOption::User,
-            ServiceTypeId::HsmEcdsa => EncryptOption::User,
-            ServiceTypeId::HsmEcdh => EncryptOption::User,
-            ServiceTypeId::HsmEcKeygen => EncryptOption::User,
-            ServiceTypeId::HsmEcDeleteKey => EncryptOption::User,
-            ServiceTypeId::HsmListKeys => EncryptOption::User,
-            ServiceTypeId::SessionEnd => EncryptOption::Device,
-            ServiceTypeId::SessionContextEnd => EncryptOption::Device,
-            ServiceTypeId::Store => EncryptOption::User,
-            ServiceTypeId::Retrieve => EncryptOption::User,
-            ServiceTypeId::Log => EncryptOption::User,
-            ServiceTypeId::GetLog => EncryptOption::User,
-            ServiceTypeId::Info => EncryptOption::User,
+            OperationId::AuthenticateStart => EncryptOption::Device,
+            OperationId::AuthenticateFinish => EncryptOption::Device,
+            OperationId::RegisterStart => EncryptOption::Device,
+            OperationId::RegisterFinish => EncryptOption::Device,
+            OperationId::PinChange => EncryptOption::User,
+            OperationId::HsmEcdsa => EncryptOption::User,
+            OperationId::HsmEcdh => EncryptOption::User,
+            OperationId::HsmEcKeygen => EncryptOption::User,
+            OperationId::HsmEcDeleteKey => EncryptOption::User,
+            OperationId::HsmListKeys => EncryptOption::User,
+            OperationId::SessionEnd => EncryptOption::Device,
+            OperationId::SessionContextEnd => EncryptOption::Device,
+            OperationId::Store => EncryptOption::User,
+            OperationId::Retrieve => EncryptOption::User,
+            OperationId::Log => EncryptOption::User,
+            OperationId::GetLog => EncryptOption::User,
+            OperationId::Info => EncryptOption::User,
         }
     }
 }

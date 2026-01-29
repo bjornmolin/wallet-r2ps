@@ -6,9 +6,9 @@ use crate::application::{
     R2psRequestId, R2psRequestUseCase, R2psResponseSpiPort, load_pem_from_bas64_env,
 };
 use crate::define_byte_vector;
-use crate::domain::value_objects::r2ps::{Claims, ServiceRequest};
+use crate::domain::value_objects::r2ps::{Claims, OuterRequest};
 use crate::domain::{
-    DefaultCipherSuite, DeviceHsmState, EncryptOption, R2psRequest, R2psRequestError,
+    DefaultCipherSuite, DeviceHsmState, EncryptOption, InnerJwe, R2psRequest, R2psRequestError,
     R2psRequestJws, R2psResponseJws, R2psServerConfig, ServiceRequestError, to_iso8601_duration,
 };
 use crate::infrastructure::ec_jwk_to_pem;
@@ -16,7 +16,6 @@ use argon2::password_hash::rand_core::OsRng;
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD;
 use josekit::jwe;
-use josekit::jwe::alg::direct::DirectJweAlgorithm;
 use josekit::jwe::{ECDH_ES, JweHeader};
 use jsonwebtoken::{Algorithm, DecodingKey, EncodingKey, Header, Validation, decode, encode};
 use opaque_ke::ServerSetup;
@@ -74,69 +73,26 @@ impl R2psService {
         }
     }
 
-    pub fn encrypt_with_aes(
-        &self,
-        payload: &[u8],
-        session_key: &SessionKey,
-    ) -> Result<String, ServiceRequestError> {
-        let mut header = JweHeader::new();
-        header.set_algorithm("dir");
-        header.set_content_encryption("A256GCM");
-
-        let encrypter = DirectJweAlgorithm::Dir
-            .encrypter_from_bytes(session_key.to_bytes())
-            .map_err(|e| {
-                error!("Failed to create encrypter: {:?}", e);
-                ServiceRequestError::Unknown
-            })?;
-
-        jwe::serialize_compact(payload, &header, &encrypter).map_err(|e| {
-            error!("Failed to encrypt: {:?}", e);
-            ServiceRequestError::Unknown
-        })
-    }
-    pub fn decrypt_jwe(
-        &self,
-        encrypted_payload: &str,
-        session_key: &SessionKey,
-    ) -> Result<DecryptedData, Box<dyn std::error::Error>> {
-        debug!("decoded service_data: {}", encrypted_payload);
-        debug!("decrypt with session key {:02X?}", session_key);
-        let decrypter = DirectJweAlgorithm::Dir.decrypter_from_bytes(session_key.to_bytes())?;
-        let (payload, _header) = jwe::deserialize_compact(encrypted_payload, &decrypter)?;
-        Ok(DecryptedData::new(payload))
-    }
-
     fn decrypt_service_data(
         &self,
-        service_request: &ServiceRequest,
+        inner_jwe: Option<&InnerJwe>,
+        enc_option: EncryptOption,
         session_key: Option<&SessionKey>,
-    ) -> Result<DecryptedData, ServiceRequestError> {
-        let decrypted_service_data = match service_request.service_type.encrypt_option() {
-            EncryptOption::User => {
-                let session_key = session_key
-                    .ok_or(R2psRequestError::UnknownSession)
-                    .map_err(|_| ServiceRequestError::UnknownSession)?;
-
-                self.decrypt_jwe(
-                    &service_request
-                        .clone()
-                        .service_data
-                        .ok_or(ServiceRequestError::Unknown)?, // TODO
+    ) -> Result<Option<DecryptedData>, ServiceRequestError> {
+        inner_jwe
+            .map(|jwe| {
+                jwe.decrypt(
+                    enc_option,
+                    &self.r2ps_server_config.server_private_key,
                     session_key,
                 )
-                .map_err(|_| ServiceRequestError::JweError)?
-            }
-            EncryptOption::Device => decrypt_service_data_jwe(
-                service_request,
-                &self.r2ps_server_config.server_private_key,
-            )
-            .map_err(|e| {
-                error!("Could not decrypt service data: {:?}", e);
-                ServiceRequestError::JweError
-            })?,
-        };
-        Ok(decrypted_service_data)
+                .map(DecryptedData::new)
+                .map_err(|e| {
+                    error!("Could not decrypt service data: {:?}", e);
+                    ServiceRequestError::JweError
+                })
+            })
+            .transpose()
     }
 }
 
@@ -151,8 +107,8 @@ impl R2psRequestUseCase for R2psService {
         let client_public_key = ec_jwk_to_pem(&state.client_public_key).map_err(|_| {
             R2psRequestError::ServiceError(ServiceRequestError::InvalidClientPublicKey)
         })?;
-        let service_request =
-            decode_service_request_jws(r2ps_request_jws.service_request_jws, &client_public_key)
+        let outer_request =
+            decode_outer_request_jws(r2ps_request_jws.outer_request_jws, &client_public_key)
                 .map_err(|_| R2psRequestError::JwsError)?;
 
         info!(
@@ -160,36 +116,31 @@ impl R2psRequestUseCase for R2psService {
             r2ps_request_jws.request_id, r2ps_request_jws.wallet_id
         );
 
-        debug!("Decoded JWS request: {:#?}", service_request);
-
         // TODO: Use JOSE 'aud' (audience) claim in the validation done inside decode_service_request_jws() instead
-        if service_request.context != "hsm" {
+        if outer_request.context != "hsm" {
             return Err(R2psRequestError::UnsupportedContext);
         }
 
-        if let Some(pake_session_id) = &service_request.pake_session_id {
-            debug!("pake_session_id: {:?}", pake_session_id);
-        }
-
-        let session_key = service_request
+        let session_key = outer_request
             .pake_session_id
             .as_ref()
             .and_then(|id| self.session_key_spi_port.get(id));
 
-        let decrypted_service_data = service_request
-            .service_data
-            .as_ref()
-            .map(|_| self.decrypt_service_data(&service_request, session_key.as_ref()))
-            .transpose()
+        let inner_request_json = self
+            .decrypt_service_data(
+                outer_request.inner_jwe.as_ref(),
+                outer_request.service_type.encrypt_option(),
+                session_key.as_ref(),
+            )
             .map_err(R2psRequestError::ServiceError)?;
 
-        if let Some(ref data) = decrypted_service_data {
-            debug_log_payload(data.as_ref(), "Decrypted service_data");
+        if let Some(ref data) = inner_request_json {
+            debug_log_payload(data.as_ref(), "Decrypted inner request");
         }
 
         info!(
             "Processing request id {} of type {:?}",
-            r2ps_request_jws.request_id, service_request.service_type
+            r2ps_request_jws.request_id, outer_request.service_type
         );
 
         let r2ps_response = self
@@ -199,17 +150,17 @@ impl R2psRequestUseCase for R2psService {
                     request_id: r2ps_request_jws.request_id.clone(),
                     wallet_id: r2ps_request_jws.wallet_id.clone(),
                     device_id: r2ps_request_jws.device_id.clone(),
-                    state: state.clone(),
-                    service_request: service_request.clone(),
+                    state: state,
+                    outer_request: outer_request.clone(),
                 },
-                decrypted_service_data,
+                inner_request_json,
             )
             .map_err(R2psRequestError::ServiceError)?;
 
-        let enc_option = service_request.service_type.encrypt_option();
+        let enc_option = outer_request.service_type.encrypt_option().clone();
         debug!(
             "Response to {:?} will be encrypted with {:?} encryption",
-            service_request.service_type, enc_option
+            outer_request.service_type, enc_option
         );
 
         let response_payload = r2ps_response
@@ -226,33 +177,29 @@ impl R2psRequestUseCase for R2psService {
                 let session_key = session_key
                     .clone()
                     .ok_or(R2psRequestError::UnknownSession)?;
-                self.encrypt_with_aes(&response_payload, &session_key)
+                InnerJwe::encrypt(&response_payload, session_key.to_bytes())
                     .map_err(|_| R2psRequestError::EncryptionError)?
+                    .into_string()
             }
             EncryptOption::Device => encrypt_with_ec_pem(
                 &response_payload,
-                &ec_jwk_to_pem(&state.client_public_key)
+                &ec_jwk_to_pem(&r2ps_response.state.client_public_key)
                     .map_err(|_| R2psRequestError::EncryptionError)?,
             )
             .map_err(|_| R2psRequestError::EncryptionError)?,
         };
 
-        let ttl = service_request
+        let ttl = outer_request
             .pake_session_id
             .as_ref()
             .and_then(|id| self.session_key_spi_port.get_remaining_ttl(id));
 
-        let jws = jws_with_jwk(
-            &jwe,
-            service_request.nonce,
-            service_request.service_type.encrypt_option(),
-            ttl,
-        )
-        .map_err(|_| R2psRequestError::JwsError)?;
+        let jws = jws_with_jwk(&jwe, outer_request.nonce, enc_option, ttl)
+            .map_err(|_| R2psRequestError::JwsError)?;
 
         debug!(
             "JWS response payload on {:?} {}",
-            service_request.service_type, jws
+            outer_request.service_type, jws
         );
 
         let r2ps_response_jws = R2psResponseJws {
@@ -321,39 +268,6 @@ fn encrypt_with_ec_pem(
     }
 }
 
-// todo remove logging of sensitive info
-pub fn decrypt_service_data_jwe(
-    service_request: &ServiceRequest,
-    server_private_key: &Pem,
-) -> Result<DecryptedData, ServiceRequestError> {
-    let service_data = service_request
-        .service_data
-        .as_ref()
-        .ok_or(ServiceRequestError::InvalidServiceRequestFormat)?;
-
-    debug!("SERVICE DATA ******* {} ", service_data);
-
-    let decrypter = ECDH_ES.decrypter_from_pem(pem::encode(server_private_key))?;
-    let (payload, _) = jwe::deserialize_compact(service_data, &decrypter)?;
-
-    debug!("decrypted JWS payload: {}", hex::encode(&payload));
-
-    if let Ok(text) = String::from_utf8(payload.clone()) {
-        debug!("decrypted JWS payload: {}", text);
-    }
-
-    Ok(DecryptedData::new(payload))
-}
-
-impl EncryptOption {
-    fn as_str(&self) -> &'static str {
-        match self {
-            EncryptOption::User => "user",
-            EncryptOption::Device => "device",
-        }
-    }
-}
-
 fn jws_with_jwk(
     data: &str,
     nonce: Option<String>,
@@ -385,7 +299,7 @@ tnZuC45gAg6wZ0UGe9nCeM7wc0yhRANCAASnNDG5ct6I/LOK0wpBtRJU4PcDFv6X
 
 fn encode_state_jws(
     state: &DeviceHsmState,
-    nonce: Option<String>,
+    _nonce: Option<String>,
 ) -> Result<String, ServiceRequestError> {
     let mut header = Header::new(Algorithm::ES256);
     header.typ = Some("JOSE".to_string());
@@ -417,11 +331,11 @@ fn decode_state_jws(
             validation.insecure_disable_signature_validation();
             match decode::<DeviceHsmState>(&state_jws, &decoding_key, &validation) {
                 Ok(service_request_claims) => {
-                    debug!("decoded claims: {:?}", service_request_claims);
+                    debug!("decoded state JWS: {:#?}", service_request_claims);
                     Ok(service_request_claims.claims)
                 }
                 Err(error) => {
-                    error!("Error decoding jws claims: {:?}", error);
+                    error!("Error decoding state JWS: {:#?}", error);
                     Err(ServiceRequestError::JwsError)
                 }
             }
@@ -432,10 +346,10 @@ fn decode_state_jws(
         }
     }
 }
-fn decode_service_request_jws(
-    service_request_jws: String,
+fn decode_outer_request_jws(
+    outer_request_jws: String,
     client_public_key: &Pem,
-) -> Result<ServiceRequest, ServiceRequestError> {
+) -> Result<OuterRequest, ServiceRequestError> {
     let pem_string = pem::encode(client_public_key);
 
     match DecodingKey::from_ec_pem(pem_string.as_bytes()) {
@@ -443,13 +357,13 @@ fn decode_service_request_jws(
             let mut validation = Validation::new(Algorithm::ES256);
             validation.validate_exp = false;
             validation.required_spec_claims.clear();
-            match decode::<ServiceRequest>(&service_request_jws, &decoding_key, &validation) {
+            match decode::<OuterRequest>(&outer_request_jws, &decoding_key, &validation) {
                 Ok(service_request_claims) => {
-                    debug!("decoded claims: {:?}", service_request_claims);
+                    debug!("decoded outer request JWS: {:#?}", service_request_claims);
                     Ok(service_request_claims.claims)
                 }
                 Err(error) => {
-                    error!("Error decoding jws claims: {:?}", error);
+                    error!("Error decoding outer request JWS: {:#?}", error);
                     Err(ServiceRequestError::JwsError)
                 }
             }

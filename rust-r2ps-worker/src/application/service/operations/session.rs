@@ -2,7 +2,7 @@ use super::ServiceOperation;
 use crate::application::service::r2ps_service::DecryptedData;
 use crate::application::session_key_spi_port::SessionKeySpiPort;
 use crate::domain::value_objects::r2ps::PakeResponsePayload;
-use crate::domain::{R2psRequest, R2psResponse, ServiceRequestError, ServiceResponse};
+use crate::domain::{OuterResponse, R2psRequest, R2psResponse, ServiceRequestError};
 use base64::Engine;
 use base64::prelude::BASE64_STANDARD;
 use std::sync::Arc;
@@ -23,12 +23,12 @@ impl ServiceOperation for SessionEndOperation {
     fn execute(
         &self,
         r2ps_request: R2psRequest,
-        _decrypted_service_data: Option<DecryptedData>,
+        _inner_request_json: Option<DecryptedData>,
     ) -> Result<R2psResponse, ServiceRequestError> {
         self.session_key_spi_port
             .end_session(
                 r2ps_request
-                    .service_request
+                    .outer_request
                     .pake_session_id
                     .clone()
                     .unwrap()
@@ -38,7 +38,7 @@ impl ServiceOperation for SessionEndOperation {
 
         let msg = br#"{"msg":"OK"}"#.to_vec();
         let pake_response = PakeResponsePayload {
-            pake_session_id: r2ps_request.service_request.pake_session_id,
+            pake_session_id: r2ps_request.outer_request.pake_session_id,
             task: None,
             response_data: Some(BASE64_STANDARD.encode(&msg)),
             message: None,
@@ -47,7 +47,7 @@ impl ServiceOperation for SessionEndOperation {
 
         Ok(R2psResponse {
             state: r2ps_request.state,
-            payload: ServiceResponse::Pake(pake_response),
+            payload: OuterResponse::Pake(pake_response),
         })
     }
 }

@@ -23,8 +23,8 @@ public abstract class ServiceExchange {
   private EncryptOption encryptOption;
 
   /** JSON data or a JWE with encrypted JSON payload */
-  @JsonProperty("data")
-  private String serviceData;
+  @JsonProperty("inner_jwe")
+  private String innerJwe;
 
   public ServiceExchange() {
     this.version = "1.0";
@@ -62,12 +62,12 @@ public abstract class ServiceExchange {
     this.encryptOption = encryptOption;
   }
 
-  public String getServiceData() {
-    return serviceData;
+  public String getInnerJwe() {
+    return innerJwe;
   }
 
-  public void setServiceData(final String serviceData) {
-    this.serviceData = serviceData;
+  public void setInnerJwe(final String innerJwe) {
+    this.innerJwe = innerJwe;
   }
 
   public abstract static class AbstractBuilder<T extends ServiceExchange, B extends AbstractBuilder<?, ?>> {
