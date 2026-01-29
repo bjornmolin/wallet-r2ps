@@ -4,11 +4,8 @@ pub mod session;
 
 use crate::application::hsm_spi_port::HsmSpiPort;
 use crate::application::pending_auth_spi_port::PendingAuthSpiPort;
-use crate::application::service::r2ps_service::DecryptedData;
 use crate::application::session_key_spi_port::SessionKeySpiPort;
-use crate::domain::{
-    DefaultCipherSuite, OperationId, R2psRequest, R2psResponse, ServiceRequestError,
-};
+use crate::domain::{DefaultCipherSuite, OperationId, R2psResponse, ServiceRequestError};
 use opaque_ke::ServerSetup;
 use std::sync::Arc;
 use tracing::debug;
@@ -20,13 +17,19 @@ use authentication::{
 use hsm::{HsmDeleteKeyOperation, HsmEcdsaSignOperation, HsmKeygenOperation, HsmListKeysOperation};
 use session::SessionEndOperation;
 
+#[derive(Debug, Clone)]
+pub struct OperationContext {
+    pub request_id: String,
+    pub wallet_id: String,
+    pub device_id: String,
+    pub state: crate::domain::DeviceHsmState,
+    pub outer_request: crate::domain::value_objects::r2ps::OuterRequest,
+    pub inner_request_json: Option<crate::application::service::r2ps_service::DecryptedData>,
+}
+
 /// Trait for service operations that can be executed
 pub trait ServiceOperation {
-    fn execute(
-        &self,
-        r2ps_request: R2psRequest,
-        inner_request_json: Option<DecryptedData>,
-    ) -> Result<R2psResponse, ServiceRequestError>;
+    fn execute(&self, context: OperationContext) -> Result<R2psResponse, ServiceRequestError>;
 }
 
 /// Contains all operation handlers
@@ -70,42 +73,22 @@ impl OperationDispatcher {
     }
 
     /// Dispatches the request to the appropriate operation handler
-    pub fn dispatch(
-        &self,
-        r2ps_request: R2psRequest,
-        inner_request_json: Option<DecryptedData>,
-    ) -> Result<R2psResponse, ServiceRequestError> {
+    pub fn dispatch(&self, context: OperationContext) -> Result<R2psResponse, ServiceRequestError> {
         debug!(
             "Requested Operation: {:?}",
-            r2ps_request.outer_request.service_type
+            context.outer_request.service_type
         );
 
-        match r2ps_request.outer_request.service_type {
-            OperationId::AuthenticateStart => self
-                .authenticate_start_op
-                .execute(r2ps_request, inner_request_json),
-            OperationId::AuthenticateFinish => self
-                .authenticate_finish_op
-                .execute(r2ps_request, inner_request_json),
-            OperationId::RegisterStart => self
-                .register_start_op
-                .execute(r2ps_request, inner_request_json),
-            OperationId::RegisterFinish => self
-                .register_finish_op
-                .execute(r2ps_request, inner_request_json),
-            OperationId::HsmEcdsa => self.hsm_ecdsa_op.execute(r2ps_request, inner_request_json),
-            OperationId::HsmEcKeygen => {
-                self.hsm_keygen_op.execute(r2ps_request, inner_request_json)
-            }
-            OperationId::HsmEcDeleteKey => self
-                .hsm_delete_key_op
-                .execute(r2ps_request, inner_request_json),
-            OperationId::HsmListKeys => self
-                .hsm_list_keys_op
-                .execute(r2ps_request, inner_request_json),
-            OperationId::SessionEnd => self
-                .session_end_op
-                .execute(r2ps_request, inner_request_json),
+        match context.outer_request.service_type {
+            OperationId::AuthenticateStart => self.authenticate_start_op.execute(context),
+            OperationId::AuthenticateFinish => self.authenticate_finish_op.execute(context),
+            OperationId::RegisterStart => self.register_start_op.execute(context),
+            OperationId::RegisterFinish => self.register_finish_op.execute(context),
+            OperationId::HsmEcdsa => self.hsm_ecdsa_op.execute(context),
+            OperationId::HsmEcKeygen => self.hsm_keygen_op.execute(context),
+            OperationId::HsmEcDeleteKey => self.hsm_delete_key_op.execute(context),
+            OperationId::HsmListKeys => self.hsm_list_keys_op.execute(context),
+            OperationId::SessionEnd => self.session_end_op.execute(context),
             OperationId::PinChange => Err(ServiceRequestError::Unknown),
             OperationId::HsmEcdh => Err(ServiceRequestError::Unknown),
             OperationId::SessionContextEnd => Err(ServiceRequestError::Unknown),

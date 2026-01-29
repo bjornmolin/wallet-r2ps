@@ -8,8 +8,8 @@ use crate::application::{
 use crate::define_byte_vector;
 use crate::domain::value_objects::r2ps::{Claims, OuterRequest};
 use crate::domain::{
-    DefaultCipherSuite, DeviceHsmState, EncryptOption, InnerJwe, R2psRequest, R2psRequestError,
-    R2psRequestJws, R2psResponseJws, R2psServerConfig, ServiceRequestError, to_iso8601_duration,
+    DefaultCipherSuite, DeviceHsmState, EncryptOption, InnerJwe, R2psRequestError, R2psRequestJws,
+    R2psResponseJws, R2psServerConfig, ServiceRequestError, to_iso8601_duration,
 };
 use crate::infrastructure::ec_jwk_to_pem;
 use argon2::password_hash::rand_core::OsRng;
@@ -31,7 +31,7 @@ use tracing::{debug, error, info};
 
 define_byte_vector!(DecryptedData);
 
-use super::operations::OperationDispatcher;
+use super::operations::{OperationContext, OperationDispatcher};
 
 pub struct R2psService {
     r2ps_response_spi_port: Arc<dyn R2psResponseSpiPort + Send + Sync>,
@@ -109,7 +109,7 @@ impl R2psRequestUseCase for R2psService {
         })?;
         let outer_request =
             decode_outer_request_jws(r2ps_request_jws.outer_request_jws, &client_public_key)
-                .map_err(|_| R2psRequestError::JwsError)?;
+                .map_err(|_| R2psRequestError::OuterJwsError)?;
 
         info!(
             "Received request id {}, wallet_id {}",
@@ -143,18 +143,18 @@ impl R2psRequestUseCase for R2psService {
             r2ps_request_jws.request_id, outer_request.service_type
         );
 
+        let operation = OperationContext {
+            request_id: r2ps_request_jws.request_id.clone(),
+            wallet_id: r2ps_request_jws.wallet_id.clone(),
+            device_id: r2ps_request_jws.device_id.clone(),
+            state: state,
+            outer_request: outer_request.clone(),
+            inner_request_json,
+        };
+
         let r2ps_response = self
             .operation_dispatcher
-            .dispatch(
-                R2psRequest {
-                    request_id: r2ps_request_jws.request_id.clone(),
-                    wallet_id: r2ps_request_jws.wallet_id.clone(),
-                    device_id: r2ps_request_jws.device_id.clone(),
-                    state: state,
-                    outer_request: outer_request.clone(),
-                },
-                inner_request_json,
-            )
+            .dispatch(operation)
             .map_err(R2psRequestError::ServiceError)?;
 
         let enc_option = outer_request.service_type.encrypt_option().clone();
@@ -170,8 +170,8 @@ impl R2psRequestUseCase for R2psService {
 
         debug_log_payload(&response_payload, "Response payload before encryption");
 
-        let new_state_jws =
-            encode_state_jws(&r2ps_response.state, None).map_err(|_| R2psRequestError::JwsError)?;
+        let new_state_jws = encode_state_jws(&r2ps_response.state, None)
+            .map_err(|_| R2psRequestError::OuterJwsError)?;
         let jwe = match enc_option {
             EncryptOption::User => {
                 let session_key = session_key
@@ -195,7 +195,7 @@ impl R2psRequestUseCase for R2psService {
             .and_then(|id| self.session_key_spi_port.get_remaining_ttl(id));
 
         let jws = jws_with_jwk(&jwe, outer_request.nonce, enc_option, ttl)
-            .map_err(|_| R2psRequestError::JwsError)?;
+            .map_err(|_| R2psRequestError::OuterJwsError)?;
 
         debug!(
             "JWS response payload on {:?} {}",

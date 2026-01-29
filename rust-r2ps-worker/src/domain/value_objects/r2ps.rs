@@ -53,16 +53,6 @@ pub struct R2psResponseJws {
     pub service_response_jws: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct R2psRequest {
-    pub request_id: String,
-    pub wallet_id: String,     // remove later? device_id or client_id?
-    pub device_id: String,     // remove later? device_id or client_id?
-    pub state: DeviceHsmState, // change to jws later
-    pub outer_request: OuterRequest,
-}
-
 // Define your output message structure
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -374,7 +364,7 @@ impl From<JoseError> for ServiceRequestError {
 pub enum R2psRequestError {
     ConnectionError,
     UnknownClient,
-    JwsError,
+    OuterJwsError,
     DecryptionError,
     EncryptionError,
     UnsupportedContext,
@@ -382,4 +372,5 @@ pub enum R2psRequestError {
     ServiceError(ServiceRequestError),
     InvalidState,
     UnknownSession,
+    InnerJweError,
 }
