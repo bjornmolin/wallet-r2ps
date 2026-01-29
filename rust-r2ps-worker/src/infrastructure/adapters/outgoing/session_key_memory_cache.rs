@@ -1,7 +1,7 @@
 use crate::application::session_key_spi_port::{SessionKey, SessionKeySpiPort};
 use moka::sync::Cache;
 use std::time::{Duration, Instant};
-use tracing::{debug, info};
+use tracing::debug;
 
 const SESSION_KEY_TTL_SECS: u64 = 600;
 
@@ -38,7 +38,7 @@ impl SessionKeySpiPort for SessionKeyMemoryCache {
         pake_session_id: &str,
         session_key: SessionKey,
     ) -> Result<Duration, crate::application::session_key_spi_port::ClientRepositoryError> {
-        info!(
+        debug!(
             "storing session key session_id: {} {:02X?}",
             pake_session_id, session_key
         );

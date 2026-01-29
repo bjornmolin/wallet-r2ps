@@ -1,3 +1,4 @@
+use crate::application::helpers::debug_log_payload;
 use crate::application::hsm_spi_port::HsmSpiPort;
 use crate::application::pending_auth_spi_port::PendingAuthSpiPort;
 use crate::application::session_key_spi_port::{SessionKey, SessionKeySpiPort};
@@ -99,7 +100,7 @@ impl R2psService {
         encrypted_payload: &str,
         session_key: &SessionKey,
     ) -> Result<DecryptedData, Box<dyn std::error::Error>> {
-        info!("decoded service_data: {}", encrypted_payload);
+        debug!("decoded service_data: {}", encrypted_payload);
         debug!("decrypt with session key {:02X?}", session_key);
         let decrypter = DirectJweAlgorithm::Dir.decrypter_from_bytes(session_key.to_bytes())?;
         let (payload, _header) = jwe::deserialize_compact(encrypted_payload, &decrypter)?;
@@ -154,8 +155,14 @@ impl R2psRequestUseCase for R2psService {
             decode_service_request_jws(r2ps_request_jws.service_request_jws, &client_public_key)
                 .map_err(|_| R2psRequestError::JwsError)?;
 
-        debug!("DECODED JWS {:?}", service_request);
+        info!(
+            "Received request id {}, wallet_id {}",
+            r2ps_request_jws.request_id, r2ps_request_jws.wallet_id
+        );
 
+        debug!("Decoded JWS request: {:#?}", service_request);
+
+        // TODO: Use JOSE 'aud' (audience) claim in the validation done inside decode_service_request_jws() instead
         if service_request.context != "hsm" {
             return Err(R2psRequestError::UnsupportedContext);
         }
@@ -176,6 +183,15 @@ impl R2psRequestUseCase for R2psService {
             .transpose()
             .map_err(R2psRequestError::ServiceError)?;
 
+        if let Some(ref data) = decrypted_service_data {
+            debug_log_payload(data.as_ref(), "Decrypted service_data");
+        }
+
+        info!(
+            "Processing request id {} of type {:?}",
+            r2ps_request_jws.request_id, service_request.service_type
+        );
+
         let r2ps_response = self
             .operation_dispatcher
             .dispatch(
@@ -191,7 +207,7 @@ impl R2psRequestUseCase for R2psService {
             .map_err(R2psRequestError::ServiceError)?;
 
         let enc_option = service_request.service_type.encrypt_option();
-        info!(
+        debug!(
             "Response to {:?} will be encrypted with {:?} encryption",
             service_request.service_type, enc_option
         );
@@ -201,16 +217,7 @@ impl R2psRequestUseCase for R2psService {
             .serialize()
             .map_err(|_| R2psRequestError::EncryptionError)?;
 
-        match response_payload.first() == Some(&b'{') && response_payload.last() == Some(&b'}') {
-            true => debug!(
-                "JSON Response payload before encryption: {}",
-                String::from_utf8_lossy(&response_payload)
-            ),
-            false => debug!(
-                "Response payload before encryption (hex): {:02X?}",
-                r2ps_response
-            ),
-        }
+        debug_log_payload(&response_payload, "Response payload before encryption");
 
         let new_state_jws =
             encode_state_jws(&r2ps_response.state, None).map_err(|_| R2psRequestError::JwsError)?;
@@ -243,7 +250,7 @@ impl R2psRequestUseCase for R2psService {
         )
         .map_err(|_| R2psRequestError::JwsError)?;
 
-        info!(
+        debug!(
             "JWS response payload on {:?} {}",
             service_request.service_type, jws
         );
@@ -256,6 +263,8 @@ impl R2psRequestUseCase for R2psService {
             state_jws: new_state_jws,
             service_response_jws: jws,
         };
+
+        info!("Responding to request id {}", r2ps_request_jws.request_id);
 
         self.r2ps_response_spi_port
             .send(r2ps_response_jws.clone())
@@ -322,15 +331,15 @@ pub fn decrypt_service_data_jwe(
         .as_ref()
         .ok_or(ServiceRequestError::InvalidServiceRequestFormat)?;
 
-    info!("SERVICE DATA ******* {} ", service_data);
+    debug!("SERVICE DATA ******* {} ", service_data);
 
     let decrypter = ECDH_ES.decrypter_from_pem(pem::encode(server_private_key))?;
     let (payload, _) = jwe::deserialize_compact(service_data, &decrypter)?;
 
-    info!("decrypted JWS payload: {}", hex::encode(&payload));
+    debug!("decrypted JWS payload: {}", hex::encode(&payload));
 
     if let Ok(text) = String::from_utf8(payload.clone()) {
-        info!("decrypted JWS payload: {}", text);
+        debug!("decrypted JWS payload: {}", text);
     }
 
     Ok(DecryptedData::new(payload))
@@ -371,7 +380,6 @@ tnZuC45gAg6wZ0UGe9nCeM7wc0yhRANCAASnNDG5ct6I/LOK0wpBtRJU4PcDFv6X
 
     let token = encode(&header, &claims, &encoding_key).unwrap();
 
-    println!("JWS Token: {}", token);
     Ok(token)
 }
 
@@ -392,7 +400,6 @@ tnZuC45gAg6wZ0UGe9nCeM7wc0yhRANCAASnNDG5ct6I/LOK0wpBtRJU4PcDFv6X
 
     let token = encode(&header, &state, &encoding_key).unwrap();
 
-    println!("JWS Token: {}", token);
     Ok(token)
 }
 
@@ -410,7 +417,7 @@ fn decode_state_jws(
             validation.insecure_disable_signature_validation();
             match decode::<DeviceHsmState>(&state_jws, &decoding_key, &validation) {
                 Ok(service_request_claims) => {
-                    info!("decoded claims: {:?}", service_request_claims);
+                    debug!("decoded claims: {:?}", service_request_claims);
                     Ok(service_request_claims.claims)
                 }
                 Err(error) => {
@@ -438,7 +445,7 @@ fn decode_service_request_jws(
             validation.required_spec_claims.clear();
             match decode::<ServiceRequest>(&service_request_jws, &decoding_key, &validation) {
                 Ok(service_request_claims) => {
-                    info!("decoded claims: {:?}", service_request_claims);
+                    debug!("decoded claims: {:?}", service_request_claims);
                     Ok(service_request_claims.claims)
                 }
                 Err(error) => {

@@ -11,7 +11,7 @@ use crate::domain::{
 };
 use opaque_ke::ServerSetup;
 use std::sync::Arc;
-use tracing::info;
+use tracing::debug;
 
 use authentication::{AuthenticateOperation, PinRegistrationOperation};
 use hsm::{HsmDeleteKeyOperation, HsmEcdsaSignOperation, HsmKeygenOperation, HsmListKeysOperation};
@@ -66,7 +66,7 @@ impl OperationDispatcher {
         r2ps_request: R2psRequest,
         decrypted_service_data: Option<DecryptedData>,
     ) -> Result<R2psResponse, ServiceRequestError> {
-        info!(
+        debug!(
             "SERVICE TYPE REQUEST {:?}",
             r2ps_request.service_request.service_type
         );

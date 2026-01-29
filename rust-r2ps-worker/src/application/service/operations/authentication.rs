@@ -17,7 +17,7 @@ use opaque_ke::{
 };
 use std::sync::Arc;
 use std::time::Instant;
-use tracing::{info, warn};
+use tracing::{debug, warn};
 use uuid::Uuid;
 
 pub struct AuthenticateOperation {
@@ -54,7 +54,7 @@ impl ServiceOperation for AuthenticateOperation {
             ServiceRequestError::InvalidPakeRequestPayload
         })?;
 
-        info!(
+        debug!(
             "deserialized pake payload authenticate request data: {}",
             pake_payload.request_data
         );
@@ -90,17 +90,17 @@ impl ServiceOperation for AuthenticateOperation {
                 let client = r2ps_request.device_id.as_bytes();
                 let server = "https://cloud-wallet.digg.se/rhsm".as_bytes();
 
-                info!(
+                debug!(
                     "OPAQUE context: '{}' hex: {}",
                     String::from_utf8_lossy(context),
                     hex::encode(context)
                 );
-                info!(
+                debug!(
                     "OPAQUE client: '{}' hex: {}",
                     String::from_utf8_lossy(client),
                     hex::encode(client)
                 );
-                info!(
+                debug!(
                     "OPAQUE server: '{}' hex: {}",
                     String::from_utf8_lossy(server),
                     hex::encode(server)
@@ -148,7 +148,7 @@ impl ServiceOperation for AuthenticateOperation {
                 };
 
                 let elapsed = start.elapsed();
-                info!("AUTH evaluate time: {} ns", elapsed.as_nanos());
+                debug!("AUTH evaluate time: {} ns", elapsed.as_nanos());
 
                 Ok(R2psResponse {
                     state: r2ps_request.state.clone(),
@@ -193,7 +193,7 @@ impl ServiceOperation for AuthenticateOperation {
                         ServiceRequestError::ServerLoginFinishFailed
                     })?;
 
-                info!("SESSION KEY: {:X}", result.session_key);
+                debug!("SESSION KEY: {:X}", result.session_key);
 
                 let pake_session_id = r2ps_request
                     .service_request
@@ -219,7 +219,7 @@ impl ServiceOperation for AuthenticateOperation {
                 };
 
                 let elapsed = start.elapsed();
-                info!("AUTH finalize time: {} ns", elapsed.as_nanos());
+                debug!("AUTH finalize time: {} ns", elapsed.as_nanos());
 
                 Ok(R2psResponse {
                     state: r2ps_request.state.clone(),
@@ -255,7 +255,7 @@ impl ServiceOperation for PinRegistrationOperation {
             ServiceRequestError::InvalidPakeRequestPayload
         })?;
 
-        info!(
+        debug!(
             "deserialized pake payload req={}",
             pake_payload.request_data
         );
@@ -286,7 +286,7 @@ impl ServiceOperation for PinRegistrationOperation {
                         ServiceRequestError::ServerRegistrationStartFailed
                     })?;
 
-                info!(
+                debug!(
                     "server_registration_start_result: {:?}",
                     server_registration_start_result.message
                 );
@@ -318,7 +318,7 @@ impl ServiceOperation for PinRegistrationOperation {
                 let password_file =
                     ServerRegistration::<DefaultCipherSuite>::finish(registration_request);
                 let password_file_serialized = password_file.serialize();
-                info!("password file: {:?}", hex::encode(password_file_serialized));
+                debug!("password file: {:?}", hex::encode(password_file_serialized));
 
                 let new_state = DeviceHsmState {
                     client_id: r2ps_request.state.client_id,

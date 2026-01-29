@@ -1,3 +1,13 @@
+use tracing::debug;
+
+/// Debug logs payload data, formatting as JSON if it appears to be JSON, otherwise as hex
+pub fn debug_log_payload(payload: &[u8], context: &str) {
+    match payload.first() == Some(&b'{') && payload.last() == Some(&b'}') {
+        true => debug!("{} (JSON): {}", context, String::from_utf8_lossy(payload)),
+        false => debug!("{} (hex): {:02X?}", context, payload),
+    }
+}
+
 /// Macro to create distinct New Type wrappers around Vec<u8> with common behavior
 #[macro_export]
 macro_rules! define_byte_vector {

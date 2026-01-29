@@ -6,7 +6,7 @@ use crate::infrastructure::session_key_memory_cache::SessionKeyMemoryCache;
 use crate::infrastructure::{KafkaConfig, R2psRequestKafkaMessageReceiver};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
-use tracing::info;
+use tracing::{debug, info};
 
 pub mod application;
 pub mod domain;
@@ -26,13 +26,13 @@ pub fn run() {
     infrastructure::config::init();
     let cfg = Arc::new(KafkaConfig::init().unwrap());
     let help = KafkaConfig::get_help();
-    info!("{:#?}", help);
+    debug!("{:#?}", help);
 
     // Handle Ctrl+C
     let running = Arc::new(AtomicBool::new(true));
     let r = running.clone();
     ctrlc::set_handler(move || {
-        info!("Received shutdown signal");
+        debug!("Received shutdown signal");
         r.store(false, Ordering::Relaxed);
     })
     .expect("Error setting Ctrl-C handler");
@@ -53,6 +53,9 @@ pub fn run() {
     let r2ps_kafka_receiver = R2psRequestKafkaMessageReceiver::new(r2ps_service, running.clone());
     // start worker i.e. process requests to responses
     let join_handle = r2ps_kafka_receiver.start_worker_thread(cfg.clone());
+
+    info!("HSM worker started");
+
     // wait until worker thread finish
     let _ = join_handle.join();
 }
