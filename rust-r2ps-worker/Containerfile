@@ -1,3 +1,28 @@
+FROM debian:bookworm-slim as runtime-softhsm
+
+RUN apt-get update && apt-get install -y \
+    zlib1g \
+    libssl3 \
+    libsasl2-2 \
+    libzstd1 \
+    ca-certificates \
+    libsofthsm2 \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN mkdir -p /myuser/softhsm/tokens
+
+RUN useradd -m myuser
+RUN chown -R myuser:myuser /myuser/softhsm
+
+COPY softhsm/entrypoint.sh /usr/local/bin/entrypoint.sh
+RUN chmod +x /usr/local/bin/entrypoint.sh
+
+USER myuser
+
+RUN echo "directories.tokendir = /myuser/softhsm/tokens" > /myuser/softhsm/softhsm2.conf
+ENV SOFTHSM2_CONF=/myuser/softhsm/softhsm2.conf
+ENV PKCS11LIB=/usr/lib/softhsm/libsofthsm2.so
+
 FROM rust:1.90-bookworm AS builder
 
 RUN apt-get update && apt-get install -y \
@@ -16,19 +41,10 @@ COPY src ./src
 # Build static binary
 RUN cargo build --release
 
-FROM debian:bookworm-slim
-
-RUN apt-get update && apt-get install -y \
-    zlib1g \
-    libssl3 \
-    libsasl2-2 \
-    libzstd1 \
-    ca-certificates \
-    libsofthsm2 \
-    && rm -rf /var/lib/apt/lists/*
+FROM runtime-softhsm
 
 # Copy the binary from builder
 COPY --from=builder /app/target/release/rust-r2ps-worker /rust-r2ps-worker
-ENV PKCS11LIB=/usr/lib/softhsm/libsofthsm2.so
-RUN softhsm2-util --init-token --slot 0 --label "wallet-keys" --so-pin "1938456231" --pin "123456"
-ENTRYPOINT ["/rust-r2ps-worker"]
+
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
+CMD ["/rust-r2ps-worker"]

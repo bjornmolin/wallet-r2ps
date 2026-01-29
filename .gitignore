@@ -62,3 +62,6 @@ pnpm-debug.log*
 .npm
 node_modules
 **/megalinter-reports
+
+
+softhsm-tokens
