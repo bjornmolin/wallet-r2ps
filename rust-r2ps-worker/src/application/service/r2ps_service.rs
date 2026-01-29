@@ -15,6 +15,7 @@ use crate::infrastructure::ec_jwk_to_pem;
 use argon2::password_hash::rand_core::OsRng;
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD;
+use base64::prelude::BASE64_STANDARD;
 use josekit::jwe;
 use josekit::jwe::alg::direct::DirectJweAlgorithm;
 use josekit::jwe::{ECDH_ES, JweHeader};
@@ -26,6 +27,7 @@ use p256::elliptic_curve::sec1::ToEncodedPoint;
 use p256::pkcs8::DecodePrivateKey;
 use pem::Pem;
 use rdkafka::message::ToBytes;
+use std::env;
 use std::sync::Arc;
 use std::time::Duration;
 use tracing::{debug, error, info};
@@ -53,8 +55,16 @@ impl R2psService {
             load_pem_from_bas64_env("SERVER_PUBLIC_KEY").expect("Failed to load SERVER_PUBLIC_KEY");
         let server_private_key = load_pem_from_bas64_env("SERVER_PRIVATE_KEY")
             .expect("Failed to load SERVER_PRIVATE_KEY");
-        let server_setup =
-            create_server_setup(&server_private_key).expect("Failed to create opaque server setup");
+
+        let server_setup = match load_server_setup("SERVER_SETUP") {
+            Ok(setup) => setup,
+            Err(e) => {
+                let setup = create_server_setup(&server_private_key)
+                    .expect("Failed to create opaque server setup");
+                info!("SERVER_SETUP={}", BASE64_STANDARD.encode(setup.serialize()));
+                setup
+            }
+        };
 
         let operation_dispatcher = OperationDispatcher::from_dependencies(
             server_setup,
@@ -295,6 +305,24 @@ fn create_server_setup(
     Ok(ServerSetup::<DefaultCipherSuite>::new_with_key_pair(
         &mut OsRng, keypair,
     ))
+}
+
+fn load_server_setup(env_var_name: &str) -> Result<ServerSetup<DefaultCipherSuite>, String> {
+    match env::var(env_var_name) {
+        Ok(server_setup_hex) => {
+            let bytes = BASE64_STANDARD
+                .decode(server_setup_hex.as_bytes())
+                .map_err(|e| format!("Failed to decode server setup hex: {}", e))?;
+
+            // Deserialize from bytes
+            ServerSetup::deserialize(&bytes)
+                .map_err(|e| format!("Failed to deserialize server setup: {}", e))
+        }
+        Err(e) => {
+            error!("Missing server setup config in {}", env_var_name);
+            Err("Invalid server setup".to_string())
+        }
+    }
 }
 
 fn encrypt_with_ec_pem(
