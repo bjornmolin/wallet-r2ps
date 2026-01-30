@@ -170,8 +170,8 @@ impl R2psRequestUseCase for R2psService {
 
         debug_log_payload(&response_payload, "Response payload before encryption");
 
-        let new_state_jws = encode_state_jws(&r2ps_response.state, None)
-            .map_err(|_| R2psRequestError::OuterJwsError)?;
+        let new_state_jws =
+            encode_state_jws(&r2ps_response.state).map_err(|_| R2psRequestError::OuterJwsError)?;
         let jwe = match enc_option {
             EncryptOption::User => {
                 let session_key = session_key
@@ -297,10 +297,7 @@ tnZuC45gAg6wZ0UGe9nCeM7wc0yhRANCAASnNDG5ct6I/LOK0wpBtRJU4PcDFv6X
     Ok(token)
 }
 
-fn encode_state_jws(
-    state: &DeviceHsmState,
-    _nonce: Option<String>,
-) -> Result<String, ServiceRequestError> {
+fn encode_state_jws(state: &DeviceHsmState) -> Result<String, ServiceRequestError> {
     let mut header = Header::new(Algorithm::ES256);
     header.typ = Some("JOSE".to_string());
 
