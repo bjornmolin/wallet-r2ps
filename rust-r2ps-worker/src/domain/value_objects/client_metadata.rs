@@ -4,12 +4,28 @@ use josekit::jwk::Jwk;
 use opaque_ke::ServerRegistrationLen;
 use serde::{Deserialize, Serialize};
 
+#[derive(Clone, Serialize, Deserialize)]
+pub struct PasswordFile(pub GenericArray<u8, ServerRegistrationLen<DefaultCipherSuite>>);
+
+// A distinct type with a suitable debug implementation
+impl std::fmt::Debug for PasswordFile {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "PasswordFile({} bytes)", self.0.len())
+    }
+}
+
+impl PasswordFile {
+    pub fn as_bytes(&self) -> &GenericArray<u8, ServerRegistrationLen<DefaultCipherSuite>> {
+        &self.0
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DeviceHsmState {
     pub client_id: String, // device_id or client_id?
     pub wallet_id: String,
     pub client_public_key: Jwk,
-    pub password_file: Option<GenericArray<u8, ServerRegistrationLen<DefaultCipherSuite>>>,
+    pub password_file: Option<PasswordFile>,
     pub keys: Vec<HsmKey>,
 }
 

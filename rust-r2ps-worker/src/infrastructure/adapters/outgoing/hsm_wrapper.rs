@@ -1,5 +1,5 @@
 use crate::application::hsm_spi_port::HsmSpiPort;
-use crate::domain::{Curve, EcPublicJwk, HsmKey};
+use crate::domain::{Curve, EcPublicJwk, HsmKey, WrappedPrivateKey};
 use base64::Engine;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use cryptoki::context::{CInitializeArgs, Pkcs11};
@@ -20,7 +20,6 @@ use tracing::{debug, warn};
 pub struct HsmWrapper {
     pkcs11: Arc<Pkcs11>,
     slot: Slot,
-    so_pin: Option<AuthPin>,
     user_pin: Option<AuthPin>,
     wrap_key_alias: Vec<u8>,
 }
@@ -73,7 +72,6 @@ impl HsmWrapper {
 
         debug!("Slot index {} is {}.", config.slot_index, slot);
         // initialize a test token
-        let so_pin = config.so_pin.map(AuthPin::new);
         let user_pin = config.user_pin.map(AuthPin::new);
 
         let wrap_key_alias = config.wrap_key_alias.as_bytes().to_vec();
@@ -86,7 +84,6 @@ impl HsmWrapper {
             pkcs11,
             slot,
             wrap_key_alias,
-            so_pin,
             user_pin,
         };
 
@@ -94,15 +91,6 @@ impl HsmWrapper {
         result.aes_wrapping_key(&session)?;
 
         Ok(result)
-    }
-
-    fn init_token_and_pin(&self) -> Result<(), Box<dyn std::error::Error>> {
-        let session = self.pkcs11.open_rw_session(self.slot)?;
-        session.login(UserType::So, self.so_pin.as_ref())?;
-        if let Some(ref user_pin) = self.user_pin {
-            session.init_pin(user_pin)?;
-        }
-        Ok(())
     }
 
     pub fn ec_key_templates(&self, label: &str, curve: &Curve) -> (Vec<Attribute>, Vec<Attribute>) {
@@ -156,11 +144,12 @@ impl HsmWrapper {
         &self,
         session: &Session,
         ec_private_key: ObjectHandle,
-    ) -> Result<Vec<u8>, Error> {
+    ) -> Result<WrappedPrivateKey, Error> {
         let mechanism = Mechanism::AesKeyWrapPad;
         let wrapping_key = self.aes_wrapping_key(session)?;
 
-        session.wrap_key(&mechanism, wrapping_key, ec_private_key)
+        let wrapped = session.wrap_key(&mechanism, wrapping_key, ec_private_key)?;
+        Ok(WrappedPrivateKey::new(wrapped))
     }
 
     pub fn unwrap_private_key(
@@ -260,24 +249,23 @@ impl HsmSpiPort for HsmWrapper {
         let public_key_jwk = self.create_ec_public_key_jwk(&session, ec_public_key, curve)?;
 
         session.close();
-        println!(
-            "Successfully generated EC key pair with label: {} {}",
-            ec_public_key,
-            wrapped_private_key.len()
+        debug!(
+            "Successfully generated EC key pair with label: {} {:?}",
+            ec_public_key, wrapped_private_key
         );
 
         Ok(HsmKey {
             wrapped_private_key,
             public_key_jwk,
-            curve_name: curve.clone(),
             created_at: chrono::Utc::now(),
         })
     }
 
-    fn sign(&self, wrapped_key: &[u8], sign_payload: &[u8]) -> Result<Vec<u8>, Error> {
+    fn sign(&self, key: &HsmKey, sign_payload: &[u8]) -> Result<Vec<u8>, Error> {
         let session = self.pkcs11.open_rw_session(self.slot)?;
         session.login(UserType::User, self.user_pin.as_ref())?;
-        let private_key = self.unwrap_private_key(&session, wrapped_key.to_vec())?;
+        let private_key =
+            self.unwrap_private_key(&session, key.wrapped_private_key.as_bytes().to_vec())?;
         let signature = session.sign(&Mechanism::Ecdsa, private_key, sign_payload)?;
         session.close();
         Ok(signature)

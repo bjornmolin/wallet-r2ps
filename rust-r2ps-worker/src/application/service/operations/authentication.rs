@@ -1,11 +1,10 @@
-use super::ServiceOperation;
+use super::{OperationContext, ServiceOperation};
 use crate::application::pending_auth_spi_port::{LoginSession, PendingAuthSpiPort};
-use crate::application::service::r2ps_service::DecryptedData;
 use crate::application::session_key_spi_port::{SessionKey, SessionKeySpiPort};
 use crate::domain::value_objects::r2ps::{PakeRequestPayload, PakeResponsePayload};
 use crate::domain::{
-    DefaultCipherSuite, DeviceHsmState, R2psRequest, R2psResponse, ServiceRequestError,
-    ServiceResponse, to_iso8601_duration,
+    DefaultCipherSuite, DeviceHsmState, OuterResponse, PasswordFile, R2psResponse,
+    ServiceRequestError, to_iso8601_duration,
 };
 use argon2::password_hash::rand_core::OsRng;
 use base64::Engine;
@@ -19,6 +18,37 @@ use std::sync::Arc;
 use std::time::Instant;
 use tracing::{debug, warn};
 use uuid::Uuid;
+
+/// Creates OPAQUE ServerLoginParameters with standardized context and identifiers
+fn create_server_login_parameters<'a: 'b, 'b>(device_id: &'a str) -> ServerLoginParameters<'a, 'b> {
+    let context = b"RPS-Ops";
+    let client = device_id.as_bytes();
+    let server = b"https://cloud-wallet.digg.se/rhsm";
+
+    debug!(
+        "OPAQUE context: '{}' hex: {}",
+        String::from_utf8_lossy(context),
+        hex::encode(context)
+    );
+    debug!(
+        "OPAQUE client: '{}' hex: {}",
+        String::from_utf8_lossy(client),
+        hex::encode(client)
+    );
+    debug!(
+        "OPAQUE server: '{}' hex: {}",
+        String::from_utf8_lossy(server),
+        hex::encode(server)
+    );
+
+    ServerLoginParameters {
+        context: Some(context),
+        identifiers: Identifiers {
+            client: Some(client),
+            server: Some(server),
+        },
+    }
+}
 
 // AuthenticateStart Operation
 pub struct AuthenticateStartOperation {
@@ -39,14 +69,11 @@ impl AuthenticateStartOperation {
 }
 
 impl ServiceOperation for AuthenticateStartOperation {
-    fn execute(
-        &self,
-        r2ps_request: R2psRequest,
-        decrypted_service_data: Option<DecryptedData>,
-    ) -> Result<R2psResponse, ServiceRequestError> {
+    fn execute(&self, context: OperationContext) -> Result<R2psResponse, ServiceRequestError> {
         let start = Instant::now();
-        let data =
-            decrypted_service_data.ok_or(ServiceRequestError::InvalidServiceRequestFormat)?;
+        let data = context
+            .inner_request_json
+            .ok_or(ServiceRequestError::InvalidServiceRequestFormat)?;
         let pake_payload = PakeRequestPayload::deserialize(data.to_vec()).map_err(|e| {
             warn!("error decoding pake request: {:?}", e);
             ServiceRequestError::InvalidPakeRequestPayload
@@ -64,16 +91,18 @@ impl ServiceOperation for AuthenticateStartOperation {
                 ServiceRequestError::InvalidPakeRequestPayload
             })?;
 
-        let password_file_serialized = r2ps_request
+        let password_file_serialized = context
             .state
             .password_file
+            .as_ref()
             .ok_or(ServiceRequestError::UnknownClient)?;
-        let password_file =
-            ServerRegistration::<DefaultCipherSuite>::deserialize(&password_file_serialized)
-                .map_err(|e| {
-                    warn!("error decoding pake request: {:?}", e);
-                    ServiceRequestError::InvalidSerializedPasswordFile
-                })?;
+        let password_file = ServerRegistration::<DefaultCipherSuite>::deserialize(
+            password_file_serialized.as_bytes(),
+        )
+        .map_err(|e| {
+            warn!("error decoding pake request: {:?}", e);
+            ServiceRequestError::InvalidSerializedPasswordFile
+        })?;
         let credential_request =
             CredentialRequest::deserialize(&decoded_request_data).map_err(|e| {
                 warn!("error decoding pake request: {:?}", e);
@@ -81,40 +110,14 @@ impl ServiceOperation for AuthenticateStartOperation {
             })?;
 
         let mut server_rng = OsRng;
-        let context = "RPS-Ops".as_bytes();
-        let client = r2ps_request.device_id.as_bytes();
-        let server = "https://cloud-wallet.digg.se/rhsm".as_bytes();
-
-        debug!(
-            "OPAQUE context: '{}' hex: {}",
-            String::from_utf8_lossy(context),
-            hex::encode(context)
-        );
-        debug!(
-            "OPAQUE client: '{}' hex: {}",
-            String::from_utf8_lossy(client),
-            hex::encode(client)
-        );
-        debug!(
-            "OPAQUE server: '{}' hex: {}",
-            String::from_utf8_lossy(server),
-            hex::encode(server)
-        );
-
-        let server_login_parameters = ServerLoginParameters {
-            context: Some(context),
-            identifiers: Identifiers {
-                client: Some(client),
-                server: Some(server),
-            },
-        };
+        let server_login_parameters = create_server_login_parameters(&context.device_id);
 
         let server_login_start_result = ServerLogin::start(
             &mut server_rng,
             &self.opaque_server_setup,
             Some(password_file),
             credential_request,
-            r2ps_request.device_id.as_bytes(),
+            context.device_id.as_bytes(),
             server_login_parameters,
         )
         .map_err(|e| {
@@ -123,8 +126,8 @@ impl ServiceOperation for AuthenticateStartOperation {
         })?;
 
         let credential_response_bytes = server_login_start_result.message.serialize();
-        let pake_session_id = r2ps_request
-            .service_request
+        let pake_session_id = context
+            .outer_request
             .pake_session_id
             .clone()
             .unwrap_or(Uuid::new_v4().to_string());
@@ -146,8 +149,8 @@ impl ServiceOperation for AuthenticateStartOperation {
         debug!("AUTH evaluate time: {} ns", elapsed.as_nanos());
 
         Ok(R2psResponse {
-            state: r2ps_request.state.clone(),
-            payload: ServiceResponse::Pake(pake_response),
+            state: context.state.clone(),
+            payload: OuterResponse::Pake(pake_response),
         })
     }
 }
@@ -171,14 +174,11 @@ impl AuthenticateFinishOperation {
 }
 
 impl ServiceOperation for AuthenticateFinishOperation {
-    fn execute(
-        &self,
-        r2ps_request: R2psRequest,
-        decrypted_service_data: Option<DecryptedData>,
-    ) -> Result<R2psResponse, ServiceRequestError> {
+    fn execute(&self, context: OperationContext) -> Result<R2psResponse, ServiceRequestError> {
         let start = Instant::now();
-        let data =
-            decrypted_service_data.ok_or(ServiceRequestError::InvalidServiceRequestFormat)?;
+        let data = context
+            .inner_request_json
+            .ok_or(ServiceRequestError::InvalidServiceRequestFormat)?;
         let pake_payload = PakeRequestPayload::deserialize(data.to_vec()).map_err(|e| {
             warn!("error decoding pake request: {:?}", e);
             ServiceRequestError::InvalidPakeRequestPayload
@@ -194,8 +194,8 @@ impl ServiceOperation for AuthenticateFinishOperation {
         let session = self
             .pending_auth_spi_port
             .get_pending_auth(
-                r2ps_request
-                    .service_request
+                context
+                    .outer_request
                     .pake_session_id
                     .clone()
                     .ok_or(ServiceRequestError::UnknownSession)?
@@ -203,16 +203,7 @@ impl ServiceOperation for AuthenticateFinishOperation {
             )
             .ok_or(ServiceRequestError::InvalidAuthenticateRequest)?;
 
-        let context = "RPS-Ops".as_bytes();
-        let client = r2ps_request.device_id.as_bytes();
-        let server = "https://cloud-wallet.digg.se/rhsm".as_bytes();
-        let server_login_parameters = ServerLoginParameters {
-            context: Some(context),
-            identifiers: Identifiers {
-                client: Some(client),
-                server: Some(server),
-            },
-        };
+        let server_login_parameters = create_server_login_parameters(&context.device_id);
 
         let server_login = session
             .take()
@@ -230,8 +221,8 @@ impl ServiceOperation for AuthenticateFinishOperation {
 
         debug!("SESSION KEY: {:X}", result.session_key);
 
-        let pake_session_id = r2ps_request
-            .service_request
+        let pake_session_id = context
+            .outer_request
             .pake_session_id
             .clone()
             .ok_or(ServiceRequestError::UnknownSession)?;
@@ -246,7 +237,7 @@ impl ServiceOperation for AuthenticateFinishOperation {
 
         let msg = br#"{"msg":"OK"}"#.to_vec();
         let pake_response = PakeResponsePayload {
-            pake_session_id: r2ps_request.service_request.pake_session_id.clone(),
+            pake_session_id: context.outer_request.pake_session_id.clone(),
             task: None,
             response_data: Some(BASE64_STANDARD.encode(&msg)),
             message: None,
@@ -257,8 +248,8 @@ impl ServiceOperation for AuthenticateFinishOperation {
         debug!("AUTH finalize time: {} ns", elapsed.as_nanos());
 
         Ok(R2psResponse {
-            state: r2ps_request.state.clone(),
-            payload: ServiceResponse::Pake(pake_response),
+            state: context.state.clone(),
+            payload: OuterResponse::Pake(pake_response),
         })
     }
 }
@@ -277,13 +268,10 @@ impl RegisterStartOperation {
 }
 
 impl ServiceOperation for RegisterStartOperation {
-    fn execute(
-        &self,
-        r2ps_request: R2psRequest,
-        decrypted_service_data: Option<DecryptedData>,
-    ) -> Result<R2psResponse, ServiceRequestError> {
-        let data =
-            decrypted_service_data.ok_or(ServiceRequestError::InvalidServiceRequestFormat)?;
+    fn execute(&self, context: OperationContext) -> Result<R2psResponse, ServiceRequestError> {
+        let data = context
+            .inner_request_json
+            .ok_or(ServiceRequestError::InvalidServiceRequestFormat)?;
         let pake_payload = PakeRequestPayload::deserialize(data.to_vec()).map_err(|e| {
             warn!("error decoding pake registration request: {:?}", e);
             ServiceRequestError::InvalidPakeRequestPayload
@@ -310,7 +298,7 @@ impl ServiceOperation for RegisterStartOperation {
         let server_registration_start_result = ServerRegistration::<DefaultCipherSuite>::start(
             &self.opaque_server_setup,
             registration_request,
-            r2ps_request.device_id.as_bytes(),
+            context.device_id.as_bytes(),
         )
         .map_err(|e| {
             warn!("invalid registration request evaluate: {:?}", e);
@@ -335,8 +323,8 @@ impl ServiceOperation for RegisterStartOperation {
         };
 
         Ok(R2psResponse {
-            state: r2ps_request.state,
-            payload: ServiceResponse::Pake(pake_response),
+            state: context.state,
+            payload: OuterResponse::Pake(pake_response),
         })
     }
 }
@@ -351,13 +339,10 @@ impl RegisterFinishOperation {
 }
 
 impl ServiceOperation for RegisterFinishOperation {
-    fn execute(
-        &self,
-        r2ps_request: R2psRequest,
-        decrypted_service_data: Option<DecryptedData>,
-    ) -> Result<R2psResponse, ServiceRequestError> {
-        let data =
-            decrypted_service_data.ok_or(ServiceRequestError::InvalidServiceRequestFormat)?;
+    fn execute(&self, context: OperationContext) -> Result<R2psResponse, ServiceRequestError> {
+        let data = context
+            .inner_request_json
+            .ok_or(ServiceRequestError::InvalidServiceRequestFormat)?;
         let pake_payload = PakeRequestPayload::deserialize(data.to_vec()).map_err(|e| {
             warn!("error decoding pake registration request: {:?}", e);
             ServiceRequestError::InvalidPakeRequestPayload
@@ -378,13 +363,16 @@ impl ServiceOperation for RegisterFinishOperation {
 
         let password_file = ServerRegistration::<DefaultCipherSuite>::finish(registration_request);
         let password_file_serialized = password_file.serialize();
-        debug!("password file: {:?}", hex::encode(password_file_serialized));
+        debug!(
+            "password file: {:?}",
+            hex::encode(&password_file_serialized)
+        );
 
         let new_state = DeviceHsmState {
-            client_id: r2ps_request.state.client_id,
-            wallet_id: r2ps_request.state.wallet_id,
-            client_public_key: r2ps_request.state.client_public_key,
-            password_file: Some(password_file_serialized),
+            client_id: context.state.client_id,
+            wallet_id: context.state.wallet_id,
+            client_public_key: context.state.client_public_key,
+            password_file: Some(PasswordFile(password_file_serialized)),
             keys: Vec::new(),
         };
 
@@ -399,7 +387,7 @@ impl ServiceOperation for RegisterFinishOperation {
 
         Ok(R2psResponse {
             state: new_state,
-            payload: ServiceResponse::Pake(pake_response),
+            payload: OuterResponse::Pake(pake_response),
         })
     }
 }
