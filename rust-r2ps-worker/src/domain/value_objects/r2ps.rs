@@ -32,12 +32,10 @@ pub enum Status {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct R2psRequestDto {
+pub struct HsmWrapperRequestDto {
     pub request_id: String,
-    pub wallet_id: String, // remove later? device_id or client_id?
-    pub device_id: String, // remove later? device_id or client_id?
     pub state_jws: String,
-    pub service_request_jws: String,
+    pub outer_request_jws: String,
 }
 
 // Define your output message structure
@@ -54,10 +52,8 @@ pub struct R2psResponseDto {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct R2psRequestJws {
+pub struct HsmWrapperRequest {
     pub request_id: String,
-    pub wallet_id: String, // remove later? device_id or client_id?
-    pub device_id: String, // remove later? device_id or client_id?
     pub state_jws: String,
     pub outer_request_jws: String,
 }

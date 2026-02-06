@@ -7,8 +7,8 @@ use crate::application::{
 use crate::define_byte_vector;
 use crate::domain::value_objects::r2ps::{OuterRequest, SessionId};
 use crate::domain::{
-    DefaultCipherSuite, DeviceHsmState, EncryptOption, InnerJwe, InnerRequest, OuterResponse,
-    R2psRequestError, R2psRequestJws, R2psResponseJws, R2psServerConfig, ServiceRequestError,
+    DefaultCipherSuite, DeviceHsmState, EncryptOption, HsmWrapperRequest, InnerJwe, InnerRequest,
+    OuterResponse, R2psRequestError, R2psResponseJws, R2psServerConfig, ServiceRequestError,
 };
 use crate::infrastructure::ec_jwk_to_pem;
 use argon2::password_hash::rand_core::OsRng;
@@ -130,11 +130,14 @@ impl R2psService {
 }
 
 impl R2psRequestUseCase for R2psService {
-    fn execute(&self, r2ps_request_jws: R2psRequestJws) -> Result<R2psRequestId, R2psRequestError> {
+    fn execute(
+        &self,
+        hsm_wrapper_request: HsmWrapperRequest,
+    ) -> Result<R2psRequestId, R2psRequestError> {
         let start = Instant::now();
 
         let state = decode_state_jws(
-            r2ps_request_jws.state_jws,
+            hsm_wrapper_request.state_jws,
             &self.r2ps_server_config.server_public_key,
         )
         .map_err(|_| R2psRequestError::InvalidState)?;
@@ -143,12 +146,12 @@ impl R2psRequestUseCase for R2psService {
             R2psRequestError::ServiceError(ServiceRequestError::InvalidClientPublicKey)
         })?;
         let outer_request =
-            decode_outer_request_jws(r2ps_request_jws.outer_request_jws, &client_public_key)
+            decode_outer_request_jws(hsm_wrapper_request.outer_request_jws, &client_public_key)
                 .map_err(|_| R2psRequestError::OuterJwsError)?;
 
         info!(
             "Received request id {}, wallet_id {}",
-            r2ps_request_jws.request_id, r2ps_request_jws.wallet_id
+            hsm_wrapper_request.request_id, state.wallet_id
         );
 
         // TODO: Use JOSE 'aud' (audience) claim in the validation done inside decode_service_request_jws() instead
@@ -171,13 +174,13 @@ impl R2psRequestUseCase for R2psService {
 
         info!(
             "Processing request id {} of type {:?}",
-            r2ps_request_jws.request_id, request_type
+            hsm_wrapper_request.request_id, request_type
         );
 
         let context = OperationContext {
-            request_id: r2ps_request_jws.request_id.clone(),
-            wallet_id: r2ps_request_jws.wallet_id.clone(),
-            device_id: r2ps_request_jws.device_id.clone(),
+            request_id: hsm_wrapper_request.request_id.clone(),
+            wallet_id: state.wallet_id.clone(),
+            device_id: state.client_id.clone(),
             state: state,
             outer_request: outer_request.clone(),
             inner_request: inner_request,
@@ -242,9 +245,9 @@ impl R2psRequestUseCase for R2psService {
             .map_err(|_| R2psRequestError::OuterJwsError)?;
 
         let r2ps_response_jws = R2psResponseJws {
-            request_id: r2ps_request_jws.request_id.clone(),
-            wallet_id: r2ps_request_jws.wallet_id.clone(),
-            device_id: r2ps_request_jws.device_id.clone(),
+            request_id: hsm_wrapper_request.request_id.clone(),
+            wallet_id: operation_result.state.wallet_id.clone(),
+            device_id: operation_result.state.client_id.clone(),
             http_status: 200,
             state_jws: new_state_jws,
             service_response_jws: jws,
@@ -267,7 +270,7 @@ impl R2psRequestUseCase for R2psService {
 
         info!(
             "Responding to request id {} ({:?}, took {}/{} ms)",
-            r2ps_request_jws.request_id,
+            hsm_wrapper_request.request_id,
             request_type,
             processing_elapsed.as_millis(),
             finished_elapsed.as_millis()

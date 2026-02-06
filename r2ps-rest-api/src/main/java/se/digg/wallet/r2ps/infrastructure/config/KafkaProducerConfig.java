@@ -15,7 +15,7 @@ import org.springframework.kafka.core.ProducerFactory;
 import org.springframework.kafka.support.serializer.JsonDeserializer;
 import org.springframework.kafka.support.serializer.JsonSerializer;
 import se.digg.wallet.r2ps.domain.command.Command;
-import se.digg.wallet.r2ps.domain.model.R2psRequest;
+import se.digg.wallet.r2ps.domain.model.HsmWrapperRequest;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -41,7 +41,7 @@ public class KafkaProducerConfig {
   }
 
   @Bean
-  public ProducerFactory<String, R2psRequest> producerFactoryR2psRequest() {
+  public ProducerFactory<String, HsmWrapperRequest> producerFactoryR2psRequest() {
     Map<String, Object> configProps = new HashMap<>(kafkaProperties.buildProducerProperties(null));
     configProps.put(
         ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG,
@@ -65,7 +65,7 @@ public class KafkaProducerConfig {
   }
 
   @Bean
-  public ConsumerFactory<String, R2psRequest> consumerFactoryR2psRequest() {
+  public ConsumerFactory<String, HsmWrapperRequest> consumerFactoryR2psRequest() {
     Map<String, Object> configProps = new HashMap<>(kafkaProperties.buildProducerProperties(null));
     configProps.put(
         ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG,
@@ -75,11 +75,11 @@ public class KafkaProducerConfig {
         JsonDeserializer.class);
     // JSON Deserializer configuration
     configProps.put(JsonDeserializer.TRUSTED_PACKAGES, "*");
-    configProps.put(JsonDeserializer.VALUE_DEFAULT_TYPE, R2psRequest.class.getName());
+    configProps.put(JsonDeserializer.VALUE_DEFAULT_TYPE, HsmWrapperRequest.class.getName());
     configProps.put(JsonDeserializer.USE_TYPE_INFO_HEADERS, false);
     return new DefaultKafkaConsumerFactory<>(configProps, new StringDeserializer(),
         new JsonDeserializer<>(
-            R2psRequest.class, false));
+            HsmWrapperRequest.class, false));
   }
 
   @Bean
@@ -93,7 +93,7 @@ public class KafkaProducerConfig {
         JsonDeserializer.class);
     // JSON Deserializer configuration
     configProps.put(JsonDeserializer.TRUSTED_PACKAGES, "*");
-    configProps.put(JsonDeserializer.VALUE_DEFAULT_TYPE, R2psRequest.class.getName());
+    configProps.put(JsonDeserializer.VALUE_DEFAULT_TYPE, HsmWrapperRequest.class.getName());
     configProps.put(JsonDeserializer.USE_TYPE_INFO_HEADERS, false);
     return new DefaultKafkaConsumerFactory<>(configProps, new StringDeserializer(),
         new JsonDeserializer<>(
@@ -119,8 +119,8 @@ public class KafkaProducerConfig {
 
 
   @Bean
-  public KafkaTemplate<String, R2psRequest> kafkaTemplateR2psRequest(
-      ProducerFactory<String, R2psRequest> producerFactory) {
+  public KafkaTemplate<String, HsmWrapperRequest> kafkaTemplateR2psRequest(
+      ProducerFactory<String, HsmWrapperRequest> producerFactory) {
     return new KafkaTemplate<>(producerFactory);
   }
 
