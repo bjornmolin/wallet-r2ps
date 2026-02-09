@@ -40,7 +40,7 @@ import se.digg.wallet.r2ps.application.port.out.RequestMessageSpiPort;
 import se.digg.wallet.r2ps.application.service.R2psResponseService;
 import se.digg.wallet.r2ps.commons.dto.BffRequest;
 import se.digg.wallet.r2ps.commons.exception.ServiceRequestHandlingException;
-import se.digg.wallet.r2ps.domain.model.HsmWrapperRequest;
+import se.digg.wallet.r2ps.domain.model.HsmWorkerRequest;
 import se.digg.wallet.r2ps.domain.model.R2psResponse;
 import se.digg.wallet.r2ps.infrastructure.config.Config;
 import se.digg.wallet.r2ps.infrastructure.service.UrlFormatterService;
@@ -158,10 +158,10 @@ public class R2psRequestController {
     }
 
     UUID requestId = UUID.randomUUID();
-    HsmWrapperRequest hsmWrapperRequest =
-        new HsmWrapperRequest(requestId, stateJws, bffRequest.getOuterRequestJws());
-    log.info("Sending service request:\n{}", objectMapper.writeValueAsString(hsmWrapperRequest));
-    requestMessageSpiPort.send(hsmWrapperRequest, walletId);
+    HsmWorkerRequest hsmWorkerRequest =
+        new HsmWorkerRequest(requestId, stateJws, bffRequest.getOuterRequestJws());
+    log.info("Sending service request:\n{}", objectMapper.writeValueAsString(hsmWorkerRequest));
+    requestMessageSpiPort.send(hsmWorkerRequest, walletId);
 
     if (syncResponseSupport) {
       log.info("Waiting for synchronous response for requestId: {}", requestId);

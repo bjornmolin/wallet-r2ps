@@ -1,9 +1,9 @@
-use crate::domain::{HsmWrapperRequest, R2psRequestError};
+use crate::domain::{HsmWorkerRequest, R2psRequestError};
 
 pub trait R2psRequestUseCase {
     fn execute(
         &self,
-        hsm_wrapper_request: HsmWrapperRequest,
+        hsm_worker_request: HsmWorkerRequest,
     ) -> Result<R2psRequestId, R2psRequestError>;
 }
 

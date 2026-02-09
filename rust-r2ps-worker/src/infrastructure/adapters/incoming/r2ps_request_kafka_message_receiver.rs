@@ -1,5 +1,5 @@
 use crate::application::{R2psRequestUseCase, R2psService};
-use crate::domain::{HsmWrapperRequest, HsmWrapperRequestDto};
+use crate::domain::{HsmWorkerRequest, HsmWorkerRequestDto};
 use crate::infrastructure::KafkaConfig;
 use rdkafka::consumer::{BaseConsumer, Consumer};
 use rdkafka::{ClientConfig, Message};
@@ -71,7 +71,7 @@ impl R2psRequestKafkaMessageReceiver {
                             }
                         };
 
-                        let hsm_wrapper_request_dto: HsmWrapperRequestDto =
+                        let hsm_worker_request_dto: HsmWorkerRequestDto =
                             match from_slice(payload) {
                                 Ok(msg) => msg,
                                 Err(e) => {
@@ -86,17 +86,17 @@ impl R2psRequestKafkaMessageReceiver {
 
                         debug!("Received message: key='{:?}'", key);
 
-                        let hsm_wrapper_request = HsmWrapperRequest {
-                            request_id: hsm_wrapper_request_dto.request_id,
-                            state_jws: hsm_wrapper_request_dto.state_jws,
-                            outer_request_jws: hsm_wrapper_request_dto.outer_request_jws,
+                        let hsm_worker_request = HsmWorkerRequest {
+                            request_id: hsm_worker_request_dto.request_id,
+                            state_jws: hsm_worker_request_dto.state_jws,
+                            outer_request_jws: hsm_worker_request_dto.outer_request_jws,
                         };
 
                         // Process the message (example: convert to uppercase)
-                        match r2ps_service.execute(hsm_wrapper_request) {
+                        match r2ps_service.execute(hsm_worker_request) {
                             Ok(request_id) => {
                                 // Serialize output message to JSON
-                                debug!("R2psRequest {} processed successfully", request_id);
+                                debug!("HsmWorkerRequest {} processed successfully", request_id);
                             }
                             Err(err) => {
                                 error!("Error processing message: {:?}", err);

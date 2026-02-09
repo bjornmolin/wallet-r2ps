@@ -32,7 +32,7 @@ pub enum Status {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct HsmWrapperRequestDto {
+pub struct HsmWorkerRequestDto {
     pub request_id: String,
     pub state_jws: String,
     pub outer_request_jws: String,
@@ -52,7 +52,7 @@ pub struct R2psResponseDto {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct HsmWrapperRequest {
+pub struct HsmWorkerRequest {
     pub request_id: String,
     pub state_jws: String,
     pub outer_request_jws: String,
