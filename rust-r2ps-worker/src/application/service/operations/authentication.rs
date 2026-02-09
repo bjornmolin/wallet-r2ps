@@ -93,14 +93,14 @@ impl ServiceOperation for AuthenticateStartOperation {
             })?;
 
         let mut server_rng = OsRng;
-        let server_login_parameters = create_server_login_parameters(&context.device_id);
+        let server_login_parameters = create_server_login_parameters(&context.state.client_id);
 
         let server_login_start_result = ServerLogin::start(
             &mut server_rng,
             &self.opaque_server_setup,
             Some(password_file),
             credential_request,
-            context.device_id.as_bytes(),
+            context.state.client_id.as_bytes(),
             server_login_parameters,
         )
         .map_err(|e| {
@@ -167,7 +167,7 @@ impl ServiceOperation for AuthenticateFinishOperation {
             .get_pending_auth(&session_id)
             .ok_or(ServiceRequestError::UnknownSession)?;
 
-        let server_login_parameters = create_server_login_parameters(&context.device_id);
+        let server_login_parameters = create_server_login_parameters(&context.state.client_id);
 
         let server_login = session
             .take()
@@ -233,7 +233,7 @@ impl ServiceOperation for RegisterStartOperation {
         let server_registration_start_result = ServerRegistration::<DefaultCipherSuite>::start(
             &self.opaque_server_setup,
             registration_request,
-            context.device_id.as_bytes(),
+            context.state.client_id.as_bytes(),
         )
         .map_err(|e| {
             warn!("invalid registration request evaluate: {:?}", e);

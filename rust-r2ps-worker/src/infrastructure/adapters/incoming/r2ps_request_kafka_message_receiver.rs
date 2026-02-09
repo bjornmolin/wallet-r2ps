@@ -71,15 +71,15 @@ impl R2psRequestKafkaMessageReceiver {
                             }
                         };
 
-                        let hsm_worker_request_dto: HsmWorkerRequestDto =
-                            match from_slice(payload) {
-                                Ok(msg) => msg,
-                                Err(e) => {
-                                    error!("Failed to deserialize JSON: {:?}", e);
-                                    error!("Payload: {:?}", String::from_utf8_lossy(payload));
-                                    continue;
-                                }
-                            };
+                        let hsm_worker_request_dto: HsmWorkerRequestDto = match from_slice(payload)
+                        {
+                            Ok(msg) => msg,
+                            Err(e) => {
+                                error!("Failed to deserialize JSON: {:?}", e);
+                                error!("Payload: {:?}", String::from_utf8_lossy(payload));
+                                continue;
+                            }
+                        };
 
                         // Extract key (optional)
                         let key = msg.key_view::<str>().unwrap();

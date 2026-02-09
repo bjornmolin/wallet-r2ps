@@ -179,11 +179,9 @@ impl R2psRequestUseCase for R2psService {
 
         let context = OperationContext {
             request_id: hsm_worker_request.request_id.clone(),
-            wallet_id: state.wallet_id.clone(),
-            device_id: state.client_id.clone(),
-            state: state,
+            state,
             outer_request: outer_request.clone(),
-            inner_request: inner_request,
+            inner_request,
             session_id: session_id.cloned(),
         };
 
