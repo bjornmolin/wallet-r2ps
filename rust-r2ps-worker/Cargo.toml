@@ -46,7 +46,6 @@ p256 = { version = "0.13", default-features = false, features = [
     "jwk",
 ] }
 elliptic-curve = { version = "0.13", features = ["sec1", "jwk"] }
-jsonwebtoken = "9"
 pem = "3"
 der = "0.7.10"
 argon2 = { version = "0.5", features = ["std"] }
