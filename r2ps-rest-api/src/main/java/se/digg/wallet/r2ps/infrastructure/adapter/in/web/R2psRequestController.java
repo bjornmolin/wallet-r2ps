@@ -14,6 +14,7 @@ import java.net.URI;
 import java.security.KeyFactory;
 import java.security.interfaces.ECPrivateKey;
 import java.security.interfaces.ECPublicKey;
+import java.security.spec.PKCS8EncodedKeySpec;
 import java.security.spec.X509EncodedKeySpec;
 import java.text.ParseException;
 import java.util.ArrayList;
@@ -93,6 +94,24 @@ public class R2psRequestController {
 
     // Convert to Nimbus ECKey using the Builder
     return new ECKey.Builder(Curve.P_256, publicKey).build();
+  }
+
+  public static ECPrivateKey pemToECPrivateKey(String pem) throws Exception {
+    // Remove PEM headers and whitespace
+    String pemContent =
+        pem.replace("-----BEGIN PRIVATE KEY-----", "")
+            .replace("-----END PRIVATE KEY-----", "")
+            .replaceAll("\\s", "");
+
+    // Decode base64
+    byte[] encodedKey = Base64.getDecoder().decode(pemContent);
+
+    // Create PKCS8 key spec
+    PKCS8EncodedKeySpec keySpec = new PKCS8EncodedKeySpec(encodedKey);
+
+    // Generate EC private key
+    KeyFactory keyFactory = KeyFactory.getInstance("EC");
+    return (ECPrivateKey) keyFactory.generatePrivate(keySpec);
   }
 
   @GetMapping("/task/{correlationId}")
@@ -239,12 +258,16 @@ public class R2psRequestController {
 
     ECKey clientPublicKey = pemToECKey(clientPublicKeyPem);
 
-    ECKey ecKey =
-        new com.nimbusds.jose.jwk.gen.ECKeyGenerator(Curve.P_256)
-            .keyID("example-key-id")
-            .generate();
+    String workerPrivateKeyPem =
+        """
+        -----BEGIN PRIVATE KEY-----
+        MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQg/NIIdRGO+qU2bjxT
+        tnZuC45gAg6wZ0UGe9nCeM7wc0yhRANCAASnNDG5ct6I/LOK0wpBtRJU4PcDFv6X
+        0upWOzkadhqcDWTgCYxROhakhPDldczjw0+FuAyGgzQVSng5DbrP+8JB
+        -----END PRIVATE KEY-----
+        """;
 
-    ECPrivateKey privateKey = ecKey.toECPrivateKey();
+    ECPrivateKey privateKey = pemToECPrivateKey(workerPrivateKeyPem);
 
     return generateInitialDeviceHsmStateJws(
         deviceId.toString(), walletId.toString(), clientPublicKey.toPublicJWK(), privateKey);
