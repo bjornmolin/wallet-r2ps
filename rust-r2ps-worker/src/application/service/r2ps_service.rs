@@ -10,12 +10,13 @@ use crate::domain::{
     DefaultCipherSuite, DeviceHsmState, EncryptOption, HsmWorkerRequest, InnerJwe, InnerRequest,
     OuterResponse, R2psRequestError, R2psResponseJws, R2psServerConfig, ServiceRequestError,
 };
-use crate::infrastructure::ec_jwk_to_pem;
 use argon2::password_hash::rand_core::OsRng;
 use base64::Engine;
 use base64::prelude::BASE64_STANDARD;
 use josekit::jwe;
 use josekit::jwe::{ECDH_ES, JweHeader};
+use josekit::jws::ES256;
+use josekit::jwt;
 use jsonwebtoken::{Algorithm, DecodingKey, EncodingKey, Header, Validation, decode, encode};
 use opaque_ke::ServerSetup;
 use opaque_ke::keypair::{KeyPair, PrivateKey, PublicKey};
@@ -142,12 +143,11 @@ impl R2psRequestUseCase for R2psService {
         )
         .map_err(|_| R2psRequestError::InvalidState)?;
 
-        let client_public_key = ec_jwk_to_pem(&state.client_public_key).map_err(|_| {
-            R2psRequestError::ServiceError(ServiceRequestError::InvalidClientPublicKey)
-        })?;
-        let outer_request =
-            decode_outer_request_jws(hsm_worker_request.outer_request_jws, &client_public_key)
-                .map_err(|_| R2psRequestError::OuterJwsError)?;
+        let outer_request = decode_outer_request_jws(
+            hsm_worker_request.outer_request_jws,
+            &state.client_public_key,
+        )
+        .map_err(|_| R2psRequestError::OuterJwsError)?;
 
         info!(
             "Received request id {}, wallet_id {}",
@@ -419,32 +419,30 @@ fn decode_state_jws(
 }
 fn decode_outer_request_jws(
     outer_request_jws: String,
-    client_public_key: &Pem,
+    client_public_key: &josekit::jwk::Jwk,
 ) -> Result<OuterRequest, ServiceRequestError> {
-    let pem_string = pem::encode(client_public_key);
+    // Create verifier from JWK using ES256 algorithm
+    let verifier = ES256
+        .verifier_from_jwk(client_public_key)
+        .map_err(|e| {
+            error!("Failed to create verifier from JWK: {:?}", e);
+            ServiceRequestError::InvalidClientPublicKey
+        })?;
 
-    // TODO: This key is converted from the JWK in the state to PEM and then from PEM into a DecodingKey.
-    // If we update the state to use the right JWK type (it currently does not), we can create the
-    // DecodingKey directly from the JWK and avoid one conversion.
-    match DecodingKey::from_ec_pem(pem_string.as_bytes()) {
-        Ok(decoding_key) => {
-            let mut validation = Validation::new(Algorithm::ES256);
-            validation.validate_exp = false;
-            validation.required_spec_claims.clear();
-            match decode::<OuterRequest>(&outer_request_jws, &decoding_key, &validation) {
-                Ok(service_request_claims) => {
-                    debug!("decoded outer request JWS: {:#?}", service_request_claims);
-                    Ok(service_request_claims.claims)
-                }
-                Err(error) => {
-                    error!("Error decoding outer request JWS: {:#?}", error);
-                    Err(ServiceRequestError::JwsError)
-                }
-            }
-        }
-        Err(error) => {
-            error!("invalid client public key: {:?}", error);
-            Err(ServiceRequestError::InvalidClientPublicKey)
-        }
-    }
+    // Decode and verify JWT
+    let (payload, _header) = jwt::decode_with_verifier(&outer_request_jws, &verifier).map_err(
+        |e| {
+            error!("JWS verification failed: {:?}", e);
+            ServiceRequestError::JwsError
+        },
+    )?;
+
+    // Deserialize payload to OuterRequest
+    let outer_request: OuterRequest = serde_json::from_str(&payload.to_string()).map_err(|e| {
+        error!("Failed to deserialize outer request: {:?}", e);
+        ServiceRequestError::JwsError
+    })?;
+
+    debug!("decoded outer request JWS: {:#?}", outer_request);
+    Ok(outer_request)
 }
