@@ -1,10 +1,14 @@
+use crate::application::service::StateInitService;
 use crate::application::{OpaqueConfig, WorkerPorts, WorkerService, load_pem_from_base64};
 use crate::infrastructure::config::app_config::AppConfig;
 use crate::infrastructure::hsm_wrapper::HsmWrapper;
 use crate::infrastructure::pending_auth_memory_cache::PendingAuthMemoryCache;
 use crate::infrastructure::r2ps_response_kafka_message_sender::WorkerResponseKafkaSender;
 use crate::infrastructure::session_key_memory_cache::SessionKeyMemoryCache;
-use crate::infrastructure::{KafkaConfig, WorkerRequestKafkaReceiver};
+use crate::infrastructure::{
+    KafkaConfig, WorkerRequestKafkaReceiver, StateInitRequestKafkaReceiver,
+    state_init_response_kafka_sender::StateInitResponseKafkaMessageSender,
+};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use tracing::{debug, info};
@@ -58,12 +62,27 @@ pub fn run() {
         opaque_config,
     ));
 
-    let worker_kafka_receiver = WorkerRequestKafkaReceiver::new(worker_service, running.clone());
-    // start worker i.e. process requests to responses
-    let join_handle = worker_kafka_receiver.start_worker_thread(kafka_config);
+    // init state initialization service
+    let state_init_response_sender =
+        Arc::new(StateInitResponseKafkaMessageSender::new(&kafka_config));
+    let state_init_service = Arc::new(StateInitService::new(
+        state_init_response_sender,
+        worker_service.server_config().clone(),
+    ));
+
+    // start r2ps request worker
+    let worker_kafka_receiver =
+        WorkerRequestKafkaReceiver::new(worker_service, running.clone());
+    let join_handle = worker_kafka_receiver.start_worker_thread(kafka_config.clone());
+
+    // start state init request worker
+    let state_init_receiver =
+        StateInitRequestKafkaReceiver::new(state_init_service, running.clone());
+    let state_init_handle = state_init_receiver.start_worker_thread(kafka_config.clone());
 
     info!("HSM worker started");
 
-    // wait until worker thread finish
+    // wait until both worker threads finish
     let _ = join_handle.join();
+    let _ = state_init_handle.join();
 }

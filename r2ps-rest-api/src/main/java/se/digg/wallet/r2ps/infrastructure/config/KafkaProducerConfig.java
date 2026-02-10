@@ -16,6 +16,8 @@ import org.springframework.kafka.support.serializer.JsonDeserializer;
 import org.springframework.kafka.support.serializer.JsonSerializer;
 import se.digg.wallet.r2ps.domain.command.Command;
 import se.digg.wallet.r2ps.domain.model.HsmWorkerRequest;
+import se.digg.wallet.r2ps.domain.model.StateInitRequest;
+import se.digg.wallet.r2ps.domain.model.StateInitResponse;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -134,6 +136,41 @@ public class KafkaProducerConfig {
   @Bean
   public KafkaTemplate<String, String> kafkaTemplateString(
       ProducerFactory<String, String> producerFactory) {
+    return new KafkaTemplate<>(producerFactory);
+  }
+
+  // State initialization beans
+  @Bean
+  public ProducerFactory<String, StateInitRequest> producerFactoryStateInitRequest() {
+    Map<String, Object> configProps = new HashMap<>(kafkaProperties.buildProducerProperties(null));
+    configProps.put(
+        ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG,
+        StringSerializer.class);
+    configProps.put(
+        ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG,
+        JsonSerializer.class);
+    return new DefaultKafkaProducerFactory<>(configProps);
+  }
+
+  @Bean
+  public ConsumerFactory<String, StateInitResponse> consumerFactoryStateInitResponse() {
+    Map<String, Object> configProps = new HashMap<>(kafkaProperties.buildProducerProperties(null));
+    configProps.put(
+        ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG,
+        StringDeserializer.class);
+    configProps.put(
+        ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG,
+        JsonDeserializer.class);
+    configProps.put(JsonDeserializer.TRUSTED_PACKAGES, "*");
+    configProps.put(JsonDeserializer.VALUE_DEFAULT_TYPE, StateInitResponse.class.getName());
+    configProps.put(JsonDeserializer.USE_TYPE_INFO_HEADERS, false);
+    return new DefaultKafkaConsumerFactory<>(configProps, new StringDeserializer(),
+        new JsonDeserializer<>(StateInitResponse.class, false));
+  }
+
+  @Bean
+  public KafkaTemplate<String, StateInitRequest> kafkaTemplateStateInitRequest(
+      ProducerFactory<String, StateInitRequest> producerFactory) {
     return new KafkaTemplate<>(producerFactory);
   }
 }

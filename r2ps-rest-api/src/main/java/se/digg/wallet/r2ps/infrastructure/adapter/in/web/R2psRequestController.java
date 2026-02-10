@@ -4,23 +4,15 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.nimbusds.jose.*;
 import com.nimbusds.jose.JWSObject;
-import com.nimbusds.jose.crypto.ECDSASigner;
 import com.nimbusds.jose.jwk.Curve;
 import com.nimbusds.jose.jwk.ECKey;
 import com.nimbusds.jose.jwk.JWK;
-import com.nimbusds.jwt.JWTClaimsSet;
-import com.nimbusds.jwt.SignedJWT;
 import java.net.URI;
 import java.security.KeyFactory;
-import java.security.interfaces.ECPrivateKey;
 import java.security.interfaces.ECPublicKey;
-import java.security.spec.PKCS8EncodedKeySpec;
 import java.security.spec.X509EncodedKeySpec;
 import java.text.ParseException;
-import java.util.ArrayList;
 import java.util.Base64;
-import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import org.slf4j.Logger;
@@ -40,11 +32,15 @@ import se.digg.wallet.r2ps.application.port.in.R2psResponseUseCase;
 import se.digg.wallet.r2ps.application.port.out.R2psDeviceStateSpiPort;
 import se.digg.wallet.r2ps.application.port.out.R2psResponseSinkSpiPort;
 import se.digg.wallet.r2ps.application.port.out.RequestMessageSpiPort;
+import se.digg.wallet.r2ps.application.port.out.StateInitRequestSpiPort;
 import se.digg.wallet.r2ps.application.service.R2psResponseService;
 import se.digg.wallet.r2ps.commons.dto.BffRequest;
 import se.digg.wallet.r2ps.commons.exception.ServiceRequestHandlingException;
 import se.digg.wallet.r2ps.domain.model.HsmWorkerRequest;
 import se.digg.wallet.r2ps.domain.model.R2psResponse;
+import se.digg.wallet.r2ps.domain.model.StateInitRequest;
+import se.digg.wallet.r2ps.domain.model.StateInitResponse;
+import se.digg.wallet.r2ps.infrastructure.adapter.in.messaging.StateInitResponseCache;
 import se.digg.wallet.r2ps.infrastructure.config.Config;
 import se.digg.wallet.r2ps.infrastructure.service.UrlFormatterService;
 
@@ -55,6 +51,8 @@ public class R2psRequestController {
   private final ObjectMapper objectMapper;
   private final R2psDeviceStateSpiPort r2psDeviceStateSpiPort;
   private final RequestMessageSpiPort requestMessageSpiPort;
+  private final StateInitRequestSpiPort stateInitRequestSpiPort;
+  private final StateInitResponseCache stateInitResponseCache;
   private final R2psResponseUseCase r2psResponseUseCase;
   private final UrlFormatterService urlFormatter;
 
@@ -65,12 +63,16 @@ public class R2psRequestController {
       ObjectMapper objectMapper,
       final R2psDeviceStateSpiPort r2psDeviceStateSpiPort,
       final RequestMessageSpiPort requestMessageSpiPort,
+      final StateInitRequestSpiPort stateInitRequestSpiPort,
+      final StateInitResponseCache stateInitResponseCache,
       R2psResponseSinkSpiPort r2psResponseSinkSpiPort,
       UrlFormatterService urlFormatter,
       Config config) {
     this.objectMapper = objectMapper;
     this.r2psDeviceStateSpiPort = r2psDeviceStateSpiPort;
     this.requestMessageSpiPort = requestMessageSpiPort;
+    this.stateInitRequestSpiPort = stateInitRequestSpiPort;
+    this.stateInitResponseCache = stateInitResponseCache;
     this.urlFormatter = urlFormatter;
     syncResponseSupport = config.getKafka().rest().serveSync();
     maxResponseTimeoutInMillis = config.getKafka().rest().syncTimeoutMs();
@@ -96,24 +98,6 @@ public class R2psRequestController {
 
     // Convert to Nimbus ECKey using the Builder
     return new ECKey.Builder(Curve.P_256, publicKey).build();
-  }
-
-  public static ECPrivateKey pemToECPrivateKey(String pem) throws Exception {
-    // Remove PEM headers and whitespace
-    String pemContent =
-        pem.replace("-----BEGIN PRIVATE KEY-----", "")
-            .replace("-----END PRIVATE KEY-----", "")
-            .replaceAll("\\s", "");
-
-    // Decode base64
-    byte[] encodedKey = Base64.getDecoder().decode(pemContent);
-
-    // Create PKCS8 key spec
-    PKCS8EncodedKeySpec keySpec = new PKCS8EncodedKeySpec(encodedKey);
-
-    // Generate EC private key
-    KeyFactory keyFactory = KeyFactory.getInstance("EC");
-    return (ECPrivateKey) keyFactory.generatePrivate(keySpec);
   }
 
   @GetMapping("/task/{correlationId}")
@@ -172,9 +156,15 @@ public class R2psRequestController {
     UUID deviceId = UUID.fromString(bffRequest.getClientId());
 
     String stateJws = r2psDeviceStateSpiPort.load(deviceId.toString());
+    String devAuthorizationCode = null;
 
     if (stateJws == null) {
-      stateJws = initializeState(deviceId);
+      // Initialize state via Rust HSM worker
+      StateInitResponse initResponse = sendStateInitRequest(bffRequest);
+      stateJws = initResponse.stateJws();
+      devAuthorizationCode = initResponse.devAuthorizationCode();
+      log.info("State initialized for client {}, dev_authorization_code: {}",
+          bffRequest.getClientId(), devAuthorizationCode);
     }
 
     UUID requestId = UUID.randomUUID();
@@ -247,8 +237,28 @@ public class R2psRequestController {
     return Optional.empty();
   }
 
-  private String initializeState(UUID deviceId) throws Exception {
-    // TODO should register initial state with a specific service
+  private StateInitResponse sendStateInitRequest(BffRequest bffRequest) throws Exception {
+    String requestId = UUID.randomUUID().toString();
+    String clientId = bffRequest.getClientId();
+
+    // Use hardcoded device public key for now
+    // TODO: Extract from JWS header once device sends it
+    se.digg.wallet.r2ps.domain.model.EcPublicJwk publicKey = getHardcodedDevicePublicKey();
+
+    // Create state init request
+    StateInitRequest request = new StateInitRequest(requestId, clientId, publicKey);
+
+    // Send via Kafka
+    UUID deviceId = UUID.fromString(clientId);
+    stateInitRequestSpiPort.send(request, deviceId);
+    log.info("Sent state init request for client: {}, requestId: {}", clientId, requestId);
+
+    // Wait for response
+    return stateInitResponseCache.waitForResponse(requestId, java.time.Duration.ofSeconds(5))
+        .orElseThrow(() -> new RuntimeException("State initialization timeout for client: " + clientId));
+  }
+
+  private se.digg.wallet.r2ps.domain.model.EcPublicJwk getHardcodedDevicePublicKey() throws Exception {
     String clientPublicKeyPem =
         """
         -----BEGIN PUBLIC KEY-----
@@ -257,59 +267,15 @@ public class R2psRequestController {
         -----END PUBLIC KEY-----
         """;
 
-    ECKey clientPublicKey = pemToECKey(clientPublicKeyPem);
+    ECKey ecKey = pemToECKey(clientPublicKeyPem).toPublicJWK();
 
-    // Compute JWK thumbprint (RFC 7638) and set as kid
-    String thumbprint = clientPublicKey.computeThumbprint("SHA-256").toString();
-    clientPublicKey = new ECKey.Builder(clientPublicKey)
-        .keyID(thumbprint)
-        .build();
-
-    String workerPrivateKeyPem =
-        """
-        -----BEGIN PRIVATE KEY-----
-        MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQg/NIIdRGO+qU2bjxT
-        tnZuC45gAg6wZ0UGe9nCeM7wc0yhRANCAASnNDG5ct6I/LOK0wpBtRJU4PcDFv6X
-        0upWOzkadhqcDWTgCYxROhakhPDldczjw0+FuAyGgzQVSng5DbrP+8JB
-        -----END PRIVATE KEY-----
-        """;
-
-    ECPrivateKey privateKey = pemToECPrivateKey(workerPrivateKeyPem);
-
-    return generateInitialDeviceHsmStateJws(
-        deviceId.toString(), clientPublicKey.toPublicJWK(), privateKey);
+    return new se.digg.wallet.r2ps.domain.model.EcPublicJwk(
+        "EC",
+        ecKey.getCurve().toString(),
+        ecKey.getX().toString(),
+        ecKey.getY().toString(),
+        ecKey.computeThumbprint("SHA-256").toString()
+    );
   }
 
-  private String generateInitialDeviceHsmStateJws(
-      String clientId, JWK clientPublicKeyJwk, ECPrivateKey privateKey)
-      throws JOSEException {
-
-    JWSHeader header = new JWSHeader.Builder(JWSAlgorithm.ES256).type(JOSEObjectType.JWT).build();
-
-    // Create device_keys list with initial client key entry
-    Map<String, Object> clientKeyEntry = new java.util.HashMap<>();
-    clientKeyEntry.put("public_key", clientPublicKeyJwk.toJSONObject());
-    clientKeyEntry.put("password_files", new ArrayList<>());
-
-    List<Map<String, Object>> deviceKeysList = List.of(clientKeyEntry);
-
-    // Build the claims set matching DeviceHsmState structure
-    JWTClaimsSet claimsSet =
-        new JWTClaimsSet.Builder()
-            .claim("version", 1)
-            .claim("client_id", clientId)
-            .claim("device_keys", deviceKeysList)
-            .claim("hsm_keys", new ArrayList<>())
-            .build();
-
-    // Create signed JWT
-    SignedJWT signedJWT = new SignedJWT(header, claimsSet);
-
-    // Sign with EC private key
-    JWSSigner signer = new ECDSASigner(privateKey);
-    signedJWT.sign(signer);
-
-    // Return serialized JWS
-    return signedJWT.serialize();
-  }
 }

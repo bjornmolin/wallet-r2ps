@@ -90,6 +90,11 @@ impl WorkerService {
         }
     }
 
+    /// Returns a reference to the server configuration
+    pub fn server_config(&self) -> &WorkerServerConfig {
+        &self.worker_server_config
+    }
+
     fn decrypt_inner_request(
         &self,
         inner_jwe: Option<&InnerJwe>,
