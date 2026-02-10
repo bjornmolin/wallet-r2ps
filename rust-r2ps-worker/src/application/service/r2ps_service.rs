@@ -229,9 +229,7 @@ impl R2psRequestUseCase for R2psService {
                     .map_err(|_| R2psRequestError::EncryptionError)?
             }
             EncryptOption::Device => {
-                let public_key = ec_jwk_to_pem(&operation_result.state.client_public_key)
-                    .map_err(|_| R2psRequestError::EncryptionError)?;
-                encrypt_with_ec_pem(&inner_response_json, &public_key)
+                encrypt_with_ec_jwk(&inner_response_json, &operation_result.state.client_public_key)
                     .map_err(|_| R2psRequestError::EncryptionError)?
             }
         };
@@ -320,27 +318,26 @@ fn load_server_setup(env_var_name: &str) -> Result<ServerSetup<DefaultCipherSuit
     }
 }
 
-fn encrypt_with_ec_pem(
+fn encrypt_with_ec_jwk(
     payload: &[u8],
-    client_public_key: &Pem,
+    client_public_key: &josekit::jwk::Jwk,
 ) -> Result<InnerJwe, ServiceRequestError> {
     let mut header = JweHeader::new();
     header.set_algorithm("ECDH-ES");
     header.set_content_encryption("A256GCM");
     header.set_key_id("device");
 
-    let pem_string = pem::encode(client_public_key);
-    match ECDH_ES.encrypter_from_pem(&pem_string) {
+    match ECDH_ES.encrypter_from_jwk(client_public_key) {
         Ok(encrypter) => match jwe::serialize_compact(payload, &header, &encrypter) {
             Ok(payload_bytes) => Ok(InnerJwe::new(payload_bytes)),
             Err(e) => {
-                error!("********1 {:?}", e);
-                Err(ServiceRequestError::Unknown)
+                error!("JWE encryption failed: {:?}", e);
+                Err(ServiceRequestError::JweError)
             }
         },
         Err(e) => {
-            error!("********2 {:?}", e);
-            Err(ServiceRequestError::Unknown)
+            error!("Failed to create encrypter from JWK: {:?}", e);
+            Err(ServiceRequestError::JweError)
         }
     }
 }
