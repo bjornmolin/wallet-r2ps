@@ -2,7 +2,7 @@ use crate::application::hsm_spi_port::HsmSpiPort;
 use crate::application::pending_auth_spi_port::PendingAuthSpiPort;
 use crate::application::session_key_spi_port::{SessionKey, SessionKeySpiPort};
 use crate::application::{
-    R2psRequestId, R2psRequestUseCase, R2psResponseSpiPort, load_pem_from_bas64_env,
+    R2psRequestId, R2psRequestUseCase, R2psResponseSpiPort, load_pem_from_base64_env,
 };
 use crate::define_byte_vector;
 use crate::domain::value_objects::r2ps::{OuterRequest, SessionId};
@@ -47,10 +47,10 @@ impl R2psService {
         hsm_spi_port: Arc<dyn HsmSpiPort + Send + Sync>,
         pending_auth_spi_port: Arc<dyn PendingAuthSpiPort + Send + Sync>,
     ) -> Self {
-        let server_public_key =
-            load_pem_from_bas64_env("SERVER_PUBLIC_KEY").expect("Failed to load SERVER_PUBLIC_KEY");
-        let server_private_key = load_pem_from_bas64_env("SERVER_PRIVATE_KEY")
-            .expect("Failed to load SERVER_PRIVATE_KEY");
+        let server_public_key = load_pem_from_base64_env("SERVER_PUBLIC_KEY")
+            .expect("Failed to load base64 PEM from environment variable SERVER_PUBLIC_KEY");
+        let server_private_key = load_pem_from_base64_env("SERVER_PRIVATE_KEY")
+            .expect("Failed to load base64 PEM from environment variable SERVER_PRIVATE_KEY");
 
         let server_setup = match load_server_setup("SERVER_SETUP") {
             Ok(setup) => setup,

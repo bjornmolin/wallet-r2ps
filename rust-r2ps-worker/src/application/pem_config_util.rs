@@ -1,25 +1,34 @@
 use base64::Engine;
 use base64::prelude::BASE64_STANDARD;
 use pem::Pem;
+use serde::de;
 use std::env;
-use tracing::error;
+use tracing::{debug, error};
 
-pub fn load_pem_from_bas64_env(env_var_name: &str) -> Result<Pem, LoadPemError> {
+pub fn load_pem_from_base64_env(env_var_name: &str) -> Result<Pem, LoadPemError> {
     match env::var(env_var_name) {
-        Ok(client_public_key_pem_base64) => {
-            match BASE64_STANDARD.decode(&client_public_key_pem_base64) {
-                Ok(decoded_bytes) => match pem::parse(&decoded_bytes) {
-                    Ok(client_public_key) => Ok(client_public_key),
-                    Err(_e) => Err(LoadPemError::InvalidPem),
-                },
-                Err(e) => {
-                    error!("Invalid client public key (base64 pem) : {}", e);
-                    Err(LoadPemError::InvalidBase64Pem)
+        Ok(pem_b64) => match BASE64_STANDARD.decode(&pem_b64) {
+            Ok(decoded_bytes) => match pem::parse(&decoded_bytes) {
+                Ok(client_public_key) => Ok(client_public_key),
+                Err(_e) => {
+                    error!("Invalid PEM in environment variable {}", env_var_name);
+                    debug!(
+                        "Decoded PEM content: {:?}",
+                        String::from_utf8_lossy(&decoded_bytes)
+                    );
+                    Err(LoadPemError::InvalidPem)
                 }
+            },
+            Err(e) => {
+                error!(
+                    "Invalid base64 PEM in environment variable {}: {}",
+                    env_var_name, e
+                );
+                Err(LoadPemError::InvalidBase64Pem)
             }
-        }
+        },
         Err(e) => {
-            error!("Invalid client public key (env variable) : {}", e);
+            error!("Invalid environment variable {}: {}", env_var_name, e);
             Err(LoadPemError::EnvError)
         }
     }
