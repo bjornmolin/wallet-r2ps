@@ -5,7 +5,7 @@ use p256::pkcs8::{EncodePrivateKey, EncodePublicKey};
 use rust_r2ps_worker::domain::EncryptOption::Device;
 use rust_r2ps_worker::domain::ServiceRequestError;
 use rust_r2ps_worker::domain::value_objects::InnerJwe;
-use rust_r2ps_worker::domain::value_objects::r2ps::OuterRequest;
+use rust_r2ps_worker::domain::value_objects::r2ps::{InnerRequest, OperationId, OuterRequest};
 
 #[test]
 fn test_decrypt_service_data_jwe_happy_path() -> Result<(), Box<dyn std::error::Error>> {
@@ -21,15 +21,21 @@ fn test_decrypt_service_data_jwe_happy_path() -> Result<(), Box<dyn std::error::
         .to_public_key_pem(Default::default())
         .map_err(|e| format!("Failed to generate public key PEM: {}", e))?;
 
-    // Encrypt a payload with the public key
-    let payload = b"Hello, World! This is a secret message.";
+    // Create a valid InnerRequest instance
+    let inner_request = InnerRequest {
+        version: 1,
+        request_type: OperationId::Info,
+        request_counter: 0,
+        data: Some("Hello, World! This is a secret message.".to_string()),
+    };
+    let payload = serde_json::to_vec(&inner_request)?;
 
     let mut header = JweHeader::new();
     header.set_algorithm("ECDH-ES");
     header.set_content_encryption("A256GCM");
 
     let encrypter = ECDH_ES.encrypter_from_pem(&public_key_pem_string)?;
-    let jwe_compact = josekit::jwe::serialize_compact(payload, &header, &encrypter)?;
+    let jwe_compact = josekit::jwe::serialize_compact(&payload, &header, &encrypter)?;
 
     // Wrap the Base64 encoded payload in a ServiceRequest
     let service_request = OuterRequest {
@@ -46,14 +52,18 @@ fn test_decrypt_service_data_jwe_happy_path() -> Result<(), Box<dyn std::error::
             .as_ref()
             .unwrap()
             .decrypt(Device, &server_private_key, None);
+
     assert!(
         result_new.is_ok(),
         "decrypt_service_data_jwe failed: {:?}",
         result_new.err()
     );
+
+    let inner_request = result_new.unwrap();
+    assert_eq!(inner_request.version, 1);
     assert_eq!(
-        result_new.unwrap().data.unwrap().as_bytes().to_vec(),
-        payload
+        inner_request.data.unwrap(),
+        "Hello, World! This is a secret message."
     );
 
     Ok(())
