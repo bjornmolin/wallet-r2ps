@@ -23,7 +23,6 @@ use p256::NistP256;
 use p256::elliptic_curve::sec1::ToEncodedPoint;
 use p256::pkcs8::DecodePrivateKey;
 use pem::Pem;
-use serde::de;
 use std::env;
 use std::sync::Arc;
 use std::time::Instant;
