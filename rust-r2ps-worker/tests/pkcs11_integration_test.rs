@@ -6,17 +6,29 @@ use p256::ecdsa::{Signature, VerifyingKey};
 use rdkafka::message::ToBytes;
 use rust_r2ps_worker::application::hsm_spi_port::HsmSpiPort;
 use rust_r2ps_worker::domain::Curve;
+use rust_r2ps_worker::infrastructure::config::config::AppConfig;
 use rust_r2ps_worker::infrastructure::hsm_wrapper::{HsmWrapper, Pkcs11Config};
 use sha2::Sha256;
 use std::sync::{Mutex, OnceLock};
+use tracing::error;
 
 static HSM_INSTANCE: OnceLock<Mutex<HsmWrapper>> = OnceLock::new();
 
 fn get_hsm() -> &'static Mutex<HsmWrapper> {
     HSM_INSTANCE.get_or_init(|| {
         dotenvy::dotenv().ok();
-        let config = Pkcs11Config::new_from_env().expect("Failed to load PKCS11 config from env");
-        let wrapper = HsmWrapper::new(config).expect("Failed to initialize HSM Wrapper");
+
+        let _ = tracing_subscriber::fmt().with_test_writer().try_init();
+
+        let app_config = AppConfig::new().unwrap();
+        let wrapper = HsmWrapper::new(Pkcs11Config {
+            lib_path: app_config.pkcs11_lib,
+            slot_token_label: app_config.pkcs11_slot_token_label,
+            so_pin: app_config.pkcs11_so_pin,
+            user_pin: app_config.pkcs11_user_pin,
+            wrap_key_alias: app_config.pkcs11_wrap_key_alias,
+        })
+        .expect("Failed to initialize HSM Wrapper");
         Mutex::new(wrapper)
     })
 }
@@ -35,7 +47,6 @@ fn gen_ecc_key_wrap_unwrap_sign() -> Result<(), Box<dyn std::error::Error>> {
     let hsm_wrapper = get_hsm().lock()?;
     let message = "foobar";
     let hsm_key = hsm_wrapper.generate_key(message, &Curve::P256)?;
-
     let digest = Sha256::digest(message);
     let signature = hsm_wrapper.sign(&hsm_key, &digest.to_vec());
 

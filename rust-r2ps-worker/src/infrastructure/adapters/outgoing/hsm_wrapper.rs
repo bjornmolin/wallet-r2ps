@@ -13,9 +13,8 @@ use der::Decode;
 use der::asn1::OctetStringRef;
 use digest::Digest;
 use p256::ecdsa::VerifyingKey;
-use std::env;
 use std::sync::Arc;
-use tracing::{debug, warn};
+use tracing::{debug, info, warn};
 
 pub struct HsmWrapper {
     pkcs11: Arc<Pkcs11>,
@@ -27,62 +26,58 @@ pub struct HsmWrapper {
 #[derive(Debug)]
 pub struct Pkcs11Config {
     pub lib_path: String,
-    pub slot_index: usize,
+    pub slot_token_label: String,
     pub so_pin: Option<String>,
     pub user_pin: Option<String>,
     pub wrap_key_alias: String,
 }
 
-impl Pkcs11Config {
-    pub fn new_from_env() -> Result<Self, Box<dyn std::error::Error>> {
-        let lib_path = env::var("PKCS11LIB").map_err(|_| "PKCS11LIB env var not set")?;
-        let slot_index_str = env::var("PKCS11_SLOT").map_err(|_| "PKCS11SLOT env var not set")?;
-        let slot_index: usize = slot_index_str.parse()?;
-        let so_pin: Option<String> = env::var("SO_PIN").ok();
-        let user_pin = env::var("USER_PIN").ok();
-        let wrap_key_alias = env::var("WRAPPER_KEY_ALIAS")
-            .ok()
-            .or_else(|| Some("aes-wrapping-key".to_string()))
-            .unwrap();
-
-        Ok(Pkcs11Config {
-            lib_path,
-            slot_index,
-            so_pin,
-            user_pin,
-            wrap_key_alias,
-        })
-    }
-}
-
 impl HsmWrapper {
     pub fn new(config: Pkcs11Config) -> Result<Self, Box<dyn std::error::Error>> {
-        debug!("Creating HSM wrapper with config {:?}", config);
+        debug!(
+            "Creating HSM wrapper with config lib_path={} slot_token_label={} wrap_key_alias={}",
+            config.lib_path, config.slot_token_label, config.wrap_key_alias
+        );
         // 1. Initialize the PKCS#11 context
         let pkcs11 = Arc::new(Pkcs11::new(config.lib_path)?);
 
         pkcs11.initialize(CInitializeArgs::OsThreads)?;
         // 2. Find the target slot ID
         let slots = pkcs11.get_slots_with_token()?;
-        if slots.len() <= config.slot_index {
-            return Err(format!("Slot index {} not found.", config.slot_index).into());
-        }
-        //let slot_id = slots[config.slot_index].id();
-        let slot = slots[config.slot_index];
 
-        debug!("Slot index {} is {}.", config.slot_index, slot);
+        let slot = slots
+            .iter()
+            .find(|slot| match pkcs11.get_token_info(**slot) {
+                Ok(token_info) => {
+                    if token_info.label().trim() == config.slot_token_label {
+                        info!(
+                            "Found slot with token label: {} id:{}",
+                            config.slot_token_label,
+                            slot.id()
+                        );
+                        true
+                    } else {
+                        false
+                    }
+                }
+                Err(_) => false,
+            })
+            .unwrap();
+        //let slot_id = slots[config.slot_index].id();
+
+        debug!("Slot {}", slot.id());
         // initialize a test token
         let user_pin = config.user_pin.map(AuthPin::new);
 
         let wrap_key_alias = config.wrap_key_alias.as_bytes().to_vec();
 
-        let session = pkcs11.open_rw_session(slot)?;
+        let session = pkcs11.open_rw_session(*slot)?;
 
         session.login(UserType::User, Some(&user_pin.clone().unwrap()))?;
 
         let result = HsmWrapper {
             pkcs11,
-            slot,
+            slot: slot.clone(),
             wrap_key_alias,
             user_pin,
         };

@@ -38,7 +38,7 @@ services:
       - .env.opaque
     environment:
       RUST_LOG: info
-      BOOTSTRAP_SERVERS: "kafka-1:19092,kafka-2:19092,kafka-3:19092"
+      KAFKA_BOOTSTRAP_SERVERS: "kafka-1:19092,kafka-2:19092,kafka-3:19092"
     volumes:
       - softhsm-tokens:/myuser/softhsm/tokens:rw
     depends_on:

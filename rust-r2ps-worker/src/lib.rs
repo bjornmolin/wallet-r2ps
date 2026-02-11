@@ -1,4 +1,5 @@
-use crate::application::R2psService;
+use crate::application::{R2psService, load_pem_from_base64};
+use crate::infrastructure::config::config::AppConfig;
 use crate::infrastructure::hsm_wrapper::{HsmWrapper, Pkcs11Config};
 use crate::infrastructure::pending_auth_memory_cache::PendingAuthMemoryCache;
 use crate::infrastructure::r2ps_response_kafka_message_sender::R2psResponseKafkaMessageSender;
@@ -23,10 +24,16 @@ pub mod infrastructure;
 
 pub fn run() {
     // config from env
-    infrastructure::config::init();
-    let cfg = Arc::new(KafkaConfig::init().unwrap());
-    let help = KafkaConfig::get_help();
-    debug!("{:#?}", help);
+    let app_config = AppConfig::new().unwrap();
+
+    info!("CONFIG EFTER:{:?}", app_config.clone());
+
+    let cfg = Arc::new(KafkaConfig {
+        bootstrap_servers: app_config.kafka_bootstrap_servers,
+        broker_address_family: app_config.kafka_broker_address_family,
+        group_id: app_config.kafka_group_id,
+        group_instance_id: app_config.kafka_group_instance_id,
+    });
 
     // Handle Ctrl+C
     let running = Arc::new(AtomicBool::new(true));
@@ -42,8 +49,25 @@ pub fn run() {
     let session_key_cache = Arc::new(SessionKeyMemoryCache::new());
     let pending_auth_cache = Arc::new(PendingAuthMemoryCache::new());
 
-    let hsm_wrapper = Arc::new(HsmWrapper::new(Pkcs11Config::new_from_env().unwrap()).unwrap());
+    let server_public_key: pem::Pem = load_pem_from_base64(&app_config.server_public_key)
+        .expect("Failed to load SERVER_PUBLIC_KEY");
+    let server_private_key = load_pem_from_base64(&app_config.server_private_key)
+        .expect("Failed to load SERVER_PRIVATE_KEY");
+
+    let hsm_wrapper = Arc::new(
+        HsmWrapper::new(Pkcs11Config {
+            lib_path: app_config.pkcs11_lib,
+            slot_token_label: app_config.pkcs11_slot_token_label,
+            so_pin: app_config.pkcs11_so_pin,
+            user_pin: app_config.pkcs11_user_pin,
+            wrap_key_alias: app_config.pkcs11_wrap_key_alias,
+        })
+        .unwrap(),
+    );
     let r2ps_service = Arc::new(R2psService::new(
+        server_public_key,
+        server_private_key,
+        app_config.server_setup,
         r2ps_kafka_sender,
         session_key_cache,
         hsm_wrapper,

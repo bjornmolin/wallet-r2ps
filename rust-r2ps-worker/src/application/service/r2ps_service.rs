@@ -1,9 +1,8 @@
 use crate::application::hsm_spi_port::HsmSpiPort;
 use crate::application::pending_auth_spi_port::PendingAuthSpiPort;
 use crate::application::session_key_spi_port::{SessionKey, SessionKeySpiPort};
-use crate::application::{
-    R2psRequestId, R2psRequestUseCase, R2psResponseSpiPort, load_pem_from_base64_env,
-};
+
+use crate::application::{R2psRequestId, R2psRequestUseCase, R2psResponseSpiPort};
 use crate::define_byte_vector;
 use crate::domain::value_objects::r2ps::{OuterRequest, SessionId};
 use crate::domain::{
@@ -23,7 +22,6 @@ use p256::NistP256;
 use p256::elliptic_curve::sec1::ToEncodedPoint;
 use p256::pkcs8::DecodePrivateKey;
 use pem::Pem;
-use std::env;
 use std::sync::Arc;
 use std::time::Instant;
 use tracing::{debug, error, info};
@@ -42,17 +40,15 @@ pub struct R2psService {
 
 impl R2psService {
     pub fn new(
+        server_public_key: Pem,
+        server_private_key: Pem,
+        server_setup: Option<String>,
         r2ps_response_spi_port: Arc<dyn R2psResponseSpiPort + Send + Sync>,
         session_key_spi_port: Arc<dyn SessionKeySpiPort + Send + Sync>,
         hsm_spi_port: Arc<dyn HsmSpiPort + Send + Sync>,
         pending_auth_spi_port: Arc<dyn PendingAuthSpiPort + Send + Sync>,
     ) -> Self {
-        let server_public_key = load_pem_from_base64_env("SERVER_PUBLIC_KEY")
-            .expect("Failed to load base64 PEM from environment variable SERVER_PUBLIC_KEY");
-        let server_private_key = load_pem_from_base64_env("SERVER_PRIVATE_KEY")
-            .expect("Failed to load base64 PEM from environment variable SERVER_PRIVATE_KEY");
-
-        let server_setup = match load_server_setup("SERVER_SETUP") {
+        let server_setup = match load_server_setup(&server_setup) {
             Ok(setup) => setup,
             Err(_e) => {
                 let setup = create_server_setup(&server_private_key)
@@ -300,9 +296,11 @@ fn create_server_setup(
     ))
 }
 
-fn load_server_setup(env_var_name: &str) -> Result<ServerSetup<DefaultCipherSuite>, String> {
-    match env::var(env_var_name) {
-        Ok(server_setup_hex) => {
+fn load_server_setup(
+    server_setup: &Option<String>,
+) -> Result<ServerSetup<DefaultCipherSuite>, String> {
+    match server_setup {
+        Some(server_setup_hex) => {
             let bytes = BASE64_STANDARD
                 .decode(server_setup_hex.as_bytes())
                 .map_err(|e| format!("Failed to decode server setup hex: {}", e))?;
@@ -311,10 +309,7 @@ fn load_server_setup(env_var_name: &str) -> Result<ServerSetup<DefaultCipherSuit
             ServerSetup::deserialize(&bytes)
                 .map_err(|e| format!("Failed to deserialize server setup: {}", e))
         }
-        Err(_e) => {
-            error!("Missing server setup config in {}", env_var_name);
-            Err("Invalid server setup".to_string())
-        }
+        None => Err("Invalid server setup".to_string()),
     }
 }
 
