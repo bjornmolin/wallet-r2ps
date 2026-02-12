@@ -1,7 +1,2 @@
-use dotenvy::dotenv;
-
+pub mod app_config;
 pub mod kafka;
-
-pub fn init() {
-    dotenv().ok();
-}

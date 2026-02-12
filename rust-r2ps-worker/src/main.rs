@@ -6,6 +6,8 @@ use tracing_subscriber::{EnvFilter, fmt};
 
 #[instrument(name = "main", skip_all)]
 fn main() {
+    dotenvy::dotenv().ok();
+
     // init tracing
     tracing_subscriber::registry()
         .with(

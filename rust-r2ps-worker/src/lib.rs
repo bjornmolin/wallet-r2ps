@@ -1,5 +1,6 @@
-use crate::application::R2psService;
-use crate::infrastructure::hsm_wrapper::{HsmWrapper, Pkcs11Config};
+use crate::application::{R2psService, load_pem_from_base64};
+use crate::infrastructure::config::app_config::AppConfig;
+use crate::infrastructure::hsm_wrapper::HsmWrapper;
 use crate::infrastructure::pending_auth_memory_cache::PendingAuthMemoryCache;
 use crate::infrastructure::r2ps_response_kafka_message_sender::R2psResponseKafkaMessageSender;
 use crate::infrastructure::session_key_memory_cache::SessionKeyMemoryCache;
@@ -23,10 +24,9 @@ pub mod infrastructure;
 
 pub fn run() {
     // config from env
-    infrastructure::config::init();
-    let cfg = Arc::new(KafkaConfig::init().unwrap());
-    let help = KafkaConfig::get_help();
-    debug!("{:#?}", help);
+    let app_config = AppConfig::new().unwrap();
+
+    let kafka_config: Arc<KafkaConfig> = Arc::new(app_config.clone().into());
 
     // Handle Ctrl+C
     let running = Arc::new(AtomicBool::new(true));
@@ -38,12 +38,20 @@ pub fn run() {
     .expect("Error setting Ctrl-C handler");
 
     // init server
-    let r2ps_kafka_sender = Arc::new(R2psResponseKafkaMessageSender::new(&cfg));
+    let r2ps_kafka_sender = Arc::new(R2psResponseKafkaMessageSender::new(&kafka_config));
     let session_key_cache = Arc::new(SessionKeyMemoryCache::new());
     let pending_auth_cache = Arc::new(PendingAuthMemoryCache::new());
 
-    let hsm_wrapper = Arc::new(HsmWrapper::new(Pkcs11Config::new_from_env().unwrap()).unwrap());
+    let server_public_key: pem::Pem = load_pem_from_base64(&app_config.server_public_key)
+        .expect("Failed to load SERVER_PUBLIC_KEY");
+    let server_private_key = load_pem_from_base64(&app_config.server_private_key)
+        .expect("Failed to load SERVER_PRIVATE_KEY");
+
+    let hsm_wrapper = Arc::new(HsmWrapper::new(app_config.clone().into()).unwrap());
     let r2ps_service = Arc::new(R2psService::new(
+        server_public_key,
+        server_private_key,
+        app_config.server_setup,
         r2ps_kafka_sender,
         session_key_cache,
         hsm_wrapper,
@@ -52,7 +60,7 @@ pub fn run() {
 
     let r2ps_kafka_receiver = R2psRequestKafkaMessageReceiver::new(r2ps_service, running.clone());
     // start worker i.e. process requests to responses
-    let join_handle = r2ps_kafka_receiver.start_worker_thread(cfg.clone());
+    let join_handle = r2ps_kafka_receiver.start_worker_thread(kafka_config);
 
     info!("HSM worker started");
 
