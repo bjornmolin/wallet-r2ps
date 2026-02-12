@@ -14,7 +14,7 @@ use der::asn1::OctetStringRef;
 use digest::Digest;
 use p256::ecdsa::VerifyingKey;
 use std::sync::Arc;
-use tracing::{debug, info, warn};
+use tracing::{debug, error, info, warn};
 
 pub struct HsmWrapper {
     pkcs11: Arc<Pkcs11>,
@@ -62,10 +62,11 @@ impl HsmWrapper {
                 }
                 Err(_) => false,
             })
-            .unwrap();
-        //let slot_id = slots[config.slot_index].id();
+            .unwrap_or_else(|| {
+                error!("Invalid slot_token_label: {}", config.slot_token_label);
+                panic!("Invalid slot_token_label");
+            });
 
-        debug!("Slot {}", slot.id());
         // initialize a test token
         let user_pin = config.user_pin.map(AuthPin::new);
 

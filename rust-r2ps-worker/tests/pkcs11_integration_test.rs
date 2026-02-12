@@ -6,11 +6,10 @@ use p256::ecdsa::{Signature, VerifyingKey};
 use rdkafka::message::ToBytes;
 use rust_r2ps_worker::application::hsm_spi_port::HsmSpiPort;
 use rust_r2ps_worker::domain::Curve;
-use rust_r2ps_worker::infrastructure::config::config::AppConfig;
+use rust_r2ps_worker::infrastructure::config::app_config::AppConfig;
 use rust_r2ps_worker::infrastructure::hsm_wrapper::{HsmWrapper, Pkcs11Config};
 use sha2::Sha256;
 use std::sync::{Mutex, OnceLock};
-use tracing::error;
 
 static HSM_INSTANCE: OnceLock<Mutex<HsmWrapper>> = OnceLock::new();
 

@@ -1,6 +1,8 @@
 use config::{Config, ConfigError, Environment};
 use serde::Deserialize;
 
+use crate::infrastructure::{KafkaConfig, hsm_wrapper::Pkcs11Config};
+
 #[derive(Debug, Clone, Deserialize)]
 pub struct AppConfig {
     pub server_private_key: String, // base64 env pem (double encoded)
@@ -32,5 +34,28 @@ impl AppConfig {
             .add_source(Environment::default())
             .build()?
             .try_deserialize()
+    }
+}
+
+impl From<AppConfig> for KafkaConfig {
+    fn from(value: AppConfig) -> Self {
+        Self {
+            bootstrap_servers: value.kafka_bootstrap_servers,
+            broker_address_family: value.kafka_broker_address_family,
+            group_id: value.kafka_group_id,
+            group_instance_id: value.kafka_group_instance_id,
+        }
+    }
+}
+
+impl From<AppConfig> for Pkcs11Config {
+    fn from(val: AppConfig) -> Self {
+        Self {
+            lib_path: val.pkcs11_lib,
+            slot_token_label: val.pkcs11_slot_token_label,
+            so_pin: val.pkcs11_so_pin,
+            user_pin: val.pkcs11_user_pin,
+            wrap_key_alias: val.pkcs11_wrap_key_alias,
+        }
     }
 }
