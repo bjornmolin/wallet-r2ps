@@ -26,8 +26,6 @@ pub fn run() {
     // config from env
     let app_config = AppConfig::new().unwrap();
 
-    info!("CONFIG EFTER:{:?}", app_config.clone());
-
     let cfg = Arc::new(KafkaConfig {
         bootstrap_servers: app_config.kafka_bootstrap_servers,
         broker_address_family: app_config.kafka_broker_address_family,
