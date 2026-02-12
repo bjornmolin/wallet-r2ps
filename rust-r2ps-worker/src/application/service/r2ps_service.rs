@@ -2,7 +2,7 @@ use crate::application::hsm_spi_port::HsmSpiPort;
 use crate::application::pending_auth_spi_port::PendingAuthSpiPort;
 use crate::application::session_key_spi_port::{SessionKey, SessionKeySpiPort};
 use crate::application::{
-    R2psRequestId, R2psRequestUseCase, R2psResponseSpiPort, load_pem_from_bas64_env,
+    R2psRequestId, R2psRequestUseCase, R2psResponseSpiPort, load_pem_from_base64_env,
 };
 use crate::define_byte_vector;
 use crate::domain::value_objects::r2ps::{OuterRequest, SessionId};
@@ -10,13 +10,13 @@ use crate::domain::{
     DefaultCipherSuite, DeviceHsmState, EncryptOption, HsmWorkerRequest, InnerJwe, InnerRequest,
     OuterResponse, R2psRequestError, R2psResponseJws, R2psServerConfig, ServiceRequestError,
 };
-use crate::infrastructure::ec_jwk_to_pem;
 use argon2::password_hash::rand_core::OsRng;
 use base64::Engine;
 use base64::prelude::BASE64_STANDARD;
 use josekit::jwe;
 use josekit::jwe::{ECDH_ES, JweHeader};
-use jsonwebtoken::{Algorithm, DecodingKey, EncodingKey, Header, Validation, decode, encode};
+use josekit::jws::ES256;
+use josekit::jwt::{self, JwtPayload};
 use opaque_ke::ServerSetup;
 use opaque_ke::keypair::{KeyPair, PrivateKey, PublicKey};
 use p256::NistP256;
@@ -47,10 +47,10 @@ impl R2psService {
         hsm_spi_port: Arc<dyn HsmSpiPort + Send + Sync>,
         pending_auth_spi_port: Arc<dyn PendingAuthSpiPort + Send + Sync>,
     ) -> Self {
-        let server_public_key =
-            load_pem_from_bas64_env("SERVER_PUBLIC_KEY").expect("Failed to load SERVER_PUBLIC_KEY");
-        let server_private_key = load_pem_from_bas64_env("SERVER_PRIVATE_KEY")
-            .expect("Failed to load SERVER_PRIVATE_KEY");
+        let server_public_key = load_pem_from_base64_env("SERVER_PUBLIC_KEY")
+            .expect("Failed to load base64 PEM from environment variable SERVER_PUBLIC_KEY");
+        let server_private_key = load_pem_from_base64_env("SERVER_PRIVATE_KEY")
+            .expect("Failed to load base64 PEM from environment variable SERVER_PRIVATE_KEY");
 
         let server_setup = match load_server_setup("SERVER_SETUP") {
             Ok(setup) => setup,
@@ -142,12 +142,11 @@ impl R2psRequestUseCase for R2psService {
         )
         .map_err(|_| R2psRequestError::InvalidState)?;
 
-        let client_public_key = ec_jwk_to_pem(&state.client_public_key).map_err(|_| {
-            R2psRequestError::ServiceError(ServiceRequestError::InvalidClientPublicKey)
-        })?;
-        let outer_request =
-            decode_outer_request_jws(hsm_worker_request.outer_request_jws, &client_public_key)
-                .map_err(|_| R2psRequestError::OuterJwsError)?;
+        let outer_request = decode_outer_request_jws(
+            hsm_worker_request.outer_request_jws,
+            &state.client_public_key,
+        )
+        .map_err(|_| R2psRequestError::OuterJwsError)?;
 
         info!(
             "Received request id {}, wallet_id {}",
@@ -228,12 +227,11 @@ impl R2psRequestUseCase for R2psService {
                 InnerJwe::encrypt(&inner_response_json, &session_key)
                     .map_err(|_| R2psRequestError::EncryptionError)?
             }
-            EncryptOption::Device => {
-                let public_key = ec_jwk_to_pem(&operation_result.state.client_public_key)
-                    .map_err(|_| R2psRequestError::EncryptionError)?;
-                encrypt_with_ec_pem(&inner_response_json, &public_key)
-                    .map_err(|_| R2psRequestError::EncryptionError)?
-            }
+            EncryptOption::Device => encrypt_with_ec_jwk(
+                &inner_response_json,
+                &operation_result.state.client_public_key,
+            )
+            .map_err(|_| R2psRequestError::EncryptionError)?,
         };
 
         let jws = create_outer_response(inner_jwe, operation_result.session_id.as_ref())
@@ -320,27 +318,26 @@ fn load_server_setup(env_var_name: &str) -> Result<ServerSetup<DefaultCipherSuit
     }
 }
 
-fn encrypt_with_ec_pem(
+fn encrypt_with_ec_jwk(
     payload: &[u8],
-    client_public_key: &Pem,
+    client_public_key: &josekit::jwk::Jwk,
 ) -> Result<InnerJwe, ServiceRequestError> {
     let mut header = JweHeader::new();
     header.set_algorithm("ECDH-ES");
     header.set_content_encryption("A256GCM");
     header.set_key_id("device");
 
-    let pem_string = pem::encode(client_public_key);
-    match ECDH_ES.encrypter_from_pem(&pem_string) {
+    match ECDH_ES.encrypter_from_jwk(client_public_key) {
         Ok(encrypter) => match jwe::serialize_compact(payload, &header, &encrypter) {
             Ok(payload_bytes) => Ok(InnerJwe::new(payload_bytes)),
             Err(e) => {
-                error!("********1 {:?}", e);
-                Err(ServiceRequestError::Unknown)
+                error!("JWE encryption failed: {:?}", e);
+                Err(ServiceRequestError::JweError)
             }
         },
         Err(e) => {
-            error!("********2 {:?}", e);
-            Err(ServiceRequestError::Unknown)
+            error!("Failed to create encrypter from JWK: {:?}", e);
+            Err(ServiceRequestError::JweError)
         }
     }
 }
@@ -357,35 +354,83 @@ fn create_outer_response(
 
     debug!("Outer response before JWS encoding: {:#?}", outer_response);
 
-    let mut header = Header::new(Algorithm::ES256);
-    header.typ = Some("JOSE".to_string());
-
     let private_key_pem = r#"-----BEGIN PRIVATE KEY-----
 MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQg/NIIdRGO+qU2bjxT
 tnZuC45gAg6wZ0UGe9nCeM7wc0yhRANCAASnNDG5ct6I/LOK0wpBtRJU4PcDFv6X
 0upWOzkadhqcDWTgCYxROhakhPDldczjw0+FuAyGgzQVSng5DbrP+8JB
 -----END PRIVATE KEY-----"#;
 
-    let encoding_key = EncodingKey::from_ec_pem(private_key_pem.as_bytes()).unwrap();
+    // Create signer from PEM
+    let signer = ES256.signer_from_pem(private_key_pem).map_err(|e| {
+        error!("Failed to create signer from PEM: {:?}", e);
+        ServiceRequestError::JwsError
+    })?;
 
-    let token = encode(&header, &outer_response, &encoding_key).unwrap();
+    // Create JWT payload from outer_response
+    let payload_json = serde_json::to_string(&outer_response).map_err(|e| {
+        error!("Failed to serialize outer response: {:?}", e);
+        ServiceRequestError::SerializeResponseError
+    })?;
+
+    let map: serde_json::Map<String, serde_json::Value> = serde_json::from_str(&payload_json)
+        .map_err(|e| {
+            error!("Failed to create payload map: {:?}", e);
+            ServiceRequestError::SerializeResponseError
+        })?;
+
+    let payload = JwtPayload::from_map(map).map_err(|e| {
+        error!("Failed to create JwtPayload: {:?}", e);
+        ServiceRequestError::JwsError
+    })?;
+
+    // Create JWS header
+    let header = josekit::jws::JwsHeader::new();
+
+    let token = jwt::encode_with_signer(&payload, &header, &signer).map_err(|e| {
+        error!("Failed to encode outer response JWS: {:?}", e);
+        ServiceRequestError::JwsError
+    })?;
 
     Ok(token)
 }
 
 fn encode_state_jws(state: &DeviceHsmState) -> Result<String, ServiceRequestError> {
-    let mut header = Header::new(Algorithm::ES256);
-    header.typ = Some("JOSE".to_string());
-
     let private_key_pem = r#"-----BEGIN PRIVATE KEY-----
 MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQg/NIIdRGO+qU2bjxT
 tnZuC45gAg6wZ0UGe9nCeM7wc0yhRANCAASnNDG5ct6I/LOK0wpBtRJU4PcDFv6X
 0upWOzkadhqcDWTgCYxROhakhPDldczjw0+FuAyGgzQVSng5DbrP+8JB
 -----END PRIVATE KEY-----"#;
 
-    let encoding_key = EncodingKey::from_ec_pem(private_key_pem.as_bytes()).unwrap();
+    // Create signer from PEM
+    let signer = ES256.signer_from_pem(private_key_pem).map_err(|e| {
+        error!("Failed to create signer from PEM: {:?}", e);
+        ServiceRequestError::JwsError
+    })?;
 
-    let token = encode(&header, &state, &encoding_key).unwrap();
+    // Create JWT payload from state
+    let payload_json = serde_json::to_string(&state).map_err(|e| {
+        error!("Failed to serialize state: {:?}", e);
+        ServiceRequestError::SerializeStateError
+    })?;
+
+    let map: serde_json::Map<String, serde_json::Value> = serde_json::from_str(&payload_json)
+        .map_err(|e| {
+            error!("Failed to create payload map: {:?}", e);
+            ServiceRequestError::SerializeStateError
+        })?;
+
+    let payload = JwtPayload::from_map(map).map_err(|e| {
+        error!("Failed to create JwtPayload: {:?}", e);
+        ServiceRequestError::JwsError
+    })?;
+
+    // Create JWS header
+    let header = josekit::jws::JwsHeader::new();
+
+    let token = jwt::encode_with_signer(&payload, &header, &signer).map_err(|e| {
+        error!("Failed to encode state JWS: {:?}", e);
+        ServiceRequestError::JwsError
+    })?;
 
     Ok(token)
 }
@@ -396,58 +441,53 @@ fn decode_state_jws(
 ) -> Result<DeviceHsmState, ServiceRequestError> {
     let pem_string = pem::encode(public_key);
 
-    // TODO: Compute DecodingKey once on startup and reuse it
-    match DecodingKey::from_ec_pem(pem_string.as_bytes()) {
-        Ok(decoding_key) => {
-            let mut validation = Validation::new(Algorithm::ES256);
-            validation.validate_exp = false;
-            validation.required_spec_claims.clear();
-            validation.insecure_disable_signature_validation();
-            match decode::<DeviceHsmState>(&state_jws, &decoding_key, &validation) {
-                Ok(service_request_claims) => {
-                    debug!("decoded state JWS: {:#?}", service_request_claims);
-                    Ok(service_request_claims.claims)
-                }
-                Err(error) => {
-                    error!("Error decoding state JWS: {:#?}", error);
-                    Err(ServiceRequestError::JwsError)
-                }
-            }
-        }
-        Err(error) => {
-            error!("invalid client public key: {:?}", error);
-            Err(ServiceRequestError::InvalidClientPublicKey)
-        }
-    }
+    // Create verifier from PEM
+    let verifier = ES256.verifier_from_pem(&pem_string).map_err(|e| {
+        error!(
+            "Failed to create verifier from server public key PEM: {:?}",
+            e
+        );
+        ServiceRequestError::JwsError
+    })?;
+
+    // Decode and verify JWT
+    let (payload, _header) = jwt::decode_with_verifier(&state_jws, &verifier).map_err(|e| {
+        error!("State JWS verification failed: {:?}", e);
+        debug!("State JWS: {}", state_jws);
+        ServiceRequestError::JwsError
+    })?;
+
+    let state: DeviceHsmState = serde_json::from_str(&payload.to_string()).map_err(|e| {
+        error!("Failed to deserialize state: {:?}", e);
+        ServiceRequestError::JwsError
+    })?;
+
+    debug!("decoded state JWS: {:#?}", state);
+    Ok(state)
 }
 fn decode_outer_request_jws(
     outer_request_jws: String,
-    client_public_key: &Pem,
+    client_public_key: &josekit::jwk::Jwk,
 ) -> Result<OuterRequest, ServiceRequestError> {
-    let pem_string = pem::encode(client_public_key);
+    // Create verifier from JWK using ES256 algorithm
+    let verifier = ES256.verifier_from_jwk(client_public_key).map_err(|e| {
+        error!("Failed to create verifier from JWK: {:?}", e);
+        ServiceRequestError::InvalidClientPublicKey
+    })?;
 
-    // TODO: This key is converted from the JWK in the state to PEM and then from PEM into a DecodingKey.
-    // If we update the state to use the right JWK type (it currently does not), we can create the
-    // DecodingKey directly from the JWK and avoid one conversion.
-    match DecodingKey::from_ec_pem(pem_string.as_bytes()) {
-        Ok(decoding_key) => {
-            let mut validation = Validation::new(Algorithm::ES256);
-            validation.validate_exp = false;
-            validation.required_spec_claims.clear();
-            match decode::<OuterRequest>(&outer_request_jws, &decoding_key, &validation) {
-                Ok(service_request_claims) => {
-                    debug!("decoded outer request JWS: {:#?}", service_request_claims);
-                    Ok(service_request_claims.claims)
-                }
-                Err(error) => {
-                    error!("Error decoding outer request JWS: {:#?}", error);
-                    Err(ServiceRequestError::JwsError)
-                }
-            }
-        }
-        Err(error) => {
-            error!("invalid client public key: {:?}", error);
-            Err(ServiceRequestError::InvalidClientPublicKey)
-        }
-    }
+    // Decode and verify JWT
+    let (payload, _header) =
+        jwt::decode_with_verifier(&outer_request_jws, &verifier).map_err(|e| {
+            error!("JWS verification failed: {:?}", e);
+            ServiceRequestError::JwsError
+        })?;
+
+    // Deserialize payload to OuterRequest
+    let outer_request: OuterRequest = serde_json::from_str(&payload.to_string()).map_err(|e| {
+        error!("Failed to deserialize outer request: {:?}", e);
+        ServiceRequestError::JwsError
+    })?;
+
+    debug!("decoded outer request JWS: {:#?}", outer_request);
+    Ok(outer_request)
 }
