@@ -6,7 +6,7 @@ use crate::infrastructure::pending_auth_memory_cache::PendingAuthMemoryCache;
 use crate::infrastructure::r2ps_response_kafka_message_sender::WorkerResponseKafkaSender;
 use crate::infrastructure::session_key_memory_cache::SessionKeyMemoryCache;
 use crate::infrastructure::{
-    KafkaConfig, WorkerRequestKafkaReceiver, StateInitRequestKafkaReceiver,
+    KafkaConfig, StateInitRequestKafkaReceiver, WorkerRequestKafkaReceiver,
     state_init_response_kafka_sender::StateInitResponseKafkaMessageSender,
 };
 use std::sync::Arc;
@@ -71,8 +71,7 @@ pub fn run() {
     ));
 
     // start r2ps request worker
-    let worker_kafka_receiver =
-        WorkerRequestKafkaReceiver::new(worker_service, running.clone());
+    let worker_kafka_receiver = WorkerRequestKafkaReceiver::new(worker_service, running.clone());
     let join_handle = worker_kafka_receiver.start_worker_thread(kafka_config.clone());
 
     // start state init request worker

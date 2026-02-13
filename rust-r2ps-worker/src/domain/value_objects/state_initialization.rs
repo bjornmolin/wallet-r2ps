@@ -1,5 +1,5 @@
-use serde::{Deserialize, Serialize};
 use crate::domain::EcPublicJwk;
+use serde::{Deserialize, Serialize};
 
 /// Request to initialize a new DeviceHsmState for a client
 #[derive(Debug, Clone, Serialize, Deserialize)]

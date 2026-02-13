@@ -1,18 +1,17 @@
 use crate::application::StateInitResponseSpiPort;
 use crate::domain::{
-    DeviceHsmState, DeviceKeyEntry, WorkerServerConfig, StateInitRequest, StateInitResponse,
+    DeviceHsmState, DeviceKeyEntry, StateInitRequest, StateInitResponse, WorkerServerConfig,
 };
 use josekit::jwk::Jwk;
 use josekit::jws::ES256;
-use josekit::jwt::{self, JwtPayload};
-use pem::Pem;
+use josekit::jws::alg::ecdsa::EcdsaJwsSigner;
 use std::sync::Arc;
 use tracing::{debug, error, info};
 use uuid::Uuid;
 
 pub struct StateInitService {
     response_spi_port: Arc<dyn StateInitResponseSpiPort + Send + Sync>,
-    server_config: WorkerServerConfig,
+    jws_signer: EcdsaJwsSigner,
 }
 
 #[derive(Debug)]
@@ -28,9 +27,14 @@ impl StateInitService {
         response_spi_port: Arc<dyn StateInitResponseSpiPort + Send + Sync>,
         server_config: WorkerServerConfig,
     ) -> Self {
+        let pem_string = pem::encode(&server_config.server_private_key);
+        let jws_signer = ES256
+            .signer_from_pem(&pem_string)
+            .expect("Failed to create JWS signer from server private key");
+
         Self {
             response_spi_port,
-            server_config,
+            jws_signer,
         }
     }
 
@@ -62,8 +66,11 @@ impl StateInitService {
 
         debug!("Created initial DeviceHsmState: {:#?}", state);
 
-        // 5. Sign state as JWS using server private key
-        let state_jws = sign_state_jws(&state, &self.server_config.server_private_key)?;
+        // 5. Encode state as JWS
+        let state_jws = state.encode_to_jws(&self.jws_signer).map_err(|e| {
+            error!("Failed to encode state JWS: {:?}", e);
+            StateInitError::SigningError
+        })?;
 
         // 6. Create response
         let response = StateInitResponse {
@@ -123,45 +130,4 @@ fn ec_public_jwk_to_jwk(ec_jwk: &crate::domain::EcPublicJwk) -> Result<Jwk, Stat
     jwk.set_key_id(&ec_jwk.kid);
 
     Ok(jwk)
-}
-
-/// Signs DeviceHsmState as JWS using server private key
-fn sign_state_jws(
-    state: &DeviceHsmState,
-    server_private_key: &Pem,
-) -> Result<String, StateInitError> {
-    let pem_string = pem::encode(server_private_key);
-
-    // Create signer from PEM
-    let signer = ES256.signer_from_pem(&pem_string).map_err(|e| {
-        error!("Failed to create signer from PEM: {:?}", e);
-        StateInitError::SigningError
-    })?;
-
-    // Create JWT payload from state
-    let payload_json = serde_json::to_string(&state).map_err(|e| {
-        error!("Failed to serialize state: {:?}", e);
-        StateInitError::SigningError
-    })?;
-
-    let map: serde_json::Map<String, serde_json::Value> = serde_json::from_str(&payload_json)
-        .map_err(|e| {
-            error!("Failed to create payload map: {:?}", e);
-            StateInitError::SigningError
-        })?;
-
-    let payload = JwtPayload::from_map(map).map_err(|e| {
-        error!("Failed to create JwtPayload: {:?}", e);
-        StateInitError::SigningError
-    })?;
-
-    // Create JWS header
-    let header = josekit::jws::JwsHeader::new();
-
-    let token = jwt::encode_with_signer(&payload, &header, &signer).map_err(|e| {
-        error!("Failed to encode state JWS: {:?}", e);
-        StateInitError::SigningError
-    })?;
-
-    Ok(token)
 }

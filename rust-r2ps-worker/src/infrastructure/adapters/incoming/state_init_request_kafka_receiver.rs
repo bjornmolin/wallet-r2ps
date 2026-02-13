@@ -34,7 +34,7 @@ impl StateInitRequestKafkaReceiver {
                 .set("group.id", &config.group_id)
                 .set(
                     "group.instance.id",
-                    &format!("{}-state-init", config.group_instance_id),
+                    format!("{}-state-init", config.group_instance_id),
                 )
                 .set("partition.assignment.strategy", "cooperative-sticky")
                 .set("enable.auto.commit", "true")
