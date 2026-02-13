@@ -2,9 +2,8 @@ use super::{OperationContext, OperationResult, ServiceOperation};
 use crate::application::hsm_spi_port::HsmSpiPort;
 use crate::define_byte_vector;
 use crate::domain::{
-    CreateKeyServiceData, CreateKeyServiceDataResponse, DeleteKeyServiceData, DeviceHsmState,
-    InnerResponseData, KeyInfo, ListKeysResponse, ServiceRequestError, SignRequest,
-    SignatureResponse,
+    CreateKeyServiceData, CreateKeyServiceDataResponse, DeleteKeyServiceData, InnerResponseData,
+    KeyInfo, ListKeysResponse, ServiceRequestError, SignRequest, SignatureResponse,
 };
 use std::sync::Arc;
 use tracing::debug;
@@ -33,9 +32,7 @@ impl ServiceOperation for HsmSignOperation {
 
         let hsm_key = context
             .state
-            .keys
-            .iter()
-            .find(|key| key.public_key_jwk.kid.eq(&sign_request.hsm_kid))
+            .find_hsm_key(&sign_request.hsm_kid)
             .cloned()
             .ok_or(ServiceRequestError::UnknownKey)?;
 
@@ -82,13 +79,8 @@ impl ServiceOperation for HsmGenerateKeyOperation {
             .generate_key("foobar", &payload.curve)
             .map_err(|_| ServiceRequestError::Unknown)?;
 
-        let mut new_keys = context.state.keys.clone();
-        new_keys.push(hsm_key.clone());
-
-        let new_state = DeviceHsmState {
-            keys: new_keys,
-            ..context.state
-        };
+        let mut new_state = context.state;
+        new_state.add_hsm_key(hsm_key.clone())?;
 
         Ok(OperationResult {
             state: new_state,
@@ -111,15 +103,8 @@ impl ServiceOperation for HsmDeleteKeyOperation {
         let payload = serde_json::from_slice::<DeleteKeyServiceData>(data.as_bytes())
             .map_err(|_| ServiceRequestError::InvalidServiceRequestFormat)?;
 
-        let new_state = DeviceHsmState {
-            keys: context
-                .state
-                .keys
-                .into_iter()
-                .filter(|key| key.public_key_jwk.kid != payload.hsm_kid)
-                .collect(),
-            ..context.state
-        };
+        let mut new_state = context.state;
+        new_state.remove_hsm_key(&payload.hsm_kid)?;
 
         Ok(OperationResult {
             state: new_state,
@@ -138,7 +123,7 @@ impl ServiceOperation for HsmListKeysOperation {
         let payload = ListKeysResponse {
             key_info: context
                 .state
-                .keys
+                .hsm_keys
                 .iter()
                 .map(|key| KeyInfo {
                     public_key: key.public_key_jwk.clone(),

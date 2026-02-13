@@ -7,7 +7,9 @@ use crate::infrastructure::{KafkaConfig, hsm_wrapper::Pkcs11Config};
 pub struct AppConfig {
     pub server_private_key: String, // base64 env pem (double encoded)
     pub server_public_key: String,  // base64 env pem (double encoded)
-    pub server_setup: Option<String>,
+    pub opaque_server_setup: Option<String>, // serialized OPAQUE server state, base64 encoded
+    pub opaque_server_identifier: String, // stable domain identifier for OPAQUE protocol
+    pub opaque_context: String,     // OPAQUE protocol context
 
     pub pkcs11_lib: String,
     pub pkcs11_slot_token_label: String,
@@ -31,6 +33,8 @@ impl AppConfig {
             .set_default("kafka_group_id", "rust-grp")?
             .set_default("kafka_group_instance_id", "consumer-1")?
             .set_default("kafka_broker_address_family", "v4")?
+            .set_default("opaque_server_identifier", "cloud-wallet.digg.se")?
+            .set_default("opaque_context", "RPS-Ops")?
             .add_source(Environment::default())
             .build()?
             .try_deserialize()

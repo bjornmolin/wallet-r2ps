@@ -51,11 +51,13 @@ pub fn run() {
     let r2ps_service = Arc::new(R2psService::new(
         server_public_key,
         server_private_key,
-        app_config.server_setup,
+        app_config.opaque_server_setup.clone(),
         r2ps_kafka_sender,
         session_key_cache,
         hsm_wrapper,
         pending_auth_cache,
+        app_config.opaque_context.clone(),
+        app_config.opaque_server_identifier.clone(),
     ));
 
     let r2ps_kafka_receiver = R2psRequestKafkaMessageReceiver::new(r2ps_service, running.clone());

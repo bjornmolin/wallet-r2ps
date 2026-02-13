@@ -19,6 +19,8 @@ import java.security.spec.X509EncodedKeySpec;
 import java.text.ParseException;
 import java.util.ArrayList;
 import java.util.Base64;
+import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import org.slf4j.Logger;
@@ -168,19 +170,18 @@ public class R2psRequestController {
     }
 
     UUID deviceId = UUID.fromString(bffRequest.getClientId());
-    UUID walletId = UUID.fromString(bffRequest.getClientId()); // TODO
 
     String stateJws = r2psDeviceStateSpiPort.load(deviceId.toString());
 
     if (stateJws == null) {
-      stateJws = initializeState(deviceId, walletId);
+      stateJws = initializeState(deviceId);
     }
 
     UUID requestId = UUID.randomUUID();
     HsmWorkerRequest hsmWorkerRequest =
         new HsmWorkerRequest(requestId, stateJws, bffRequest.getOuterRequestJws());
     log.info("Sending service request:\n{}", objectMapper.writeValueAsString(hsmWorkerRequest));
-    requestMessageSpiPort.send(hsmWorkerRequest, walletId);
+    requestMessageSpiPort.send(hsmWorkerRequest, deviceId);
 
     if (syncResponseSupport) {
       log.info("Waiting for synchronous response for requestId: {}", requestId);
@@ -246,7 +247,7 @@ public class R2psRequestController {
     return Optional.empty();
   }
 
-  private String initializeState(UUID deviceId, UUID walletId) throws Exception {
+  private String initializeState(UUID deviceId) throws Exception {
     // TODO should register initial state with a specific service
     String clientPublicKeyPem =
         """
@@ -257,6 +258,12 @@ public class R2psRequestController {
         """;
 
     ECKey clientPublicKey = pemToECKey(clientPublicKeyPem);
+
+    // Compute JWK thumbprint (RFC 7638) and set as kid
+    String thumbprint = clientPublicKey.computeThumbprint("SHA-256").toString();
+    clientPublicKey = new ECKey.Builder(clientPublicKey)
+        .keyID(thumbprint)
+        .build();
 
     String workerPrivateKeyPem =
         """
@@ -270,22 +277,29 @@ public class R2psRequestController {
     ECPrivateKey privateKey = pemToECPrivateKey(workerPrivateKeyPem);
 
     return generateInitialDeviceHsmStateJws(
-        deviceId.toString(), walletId.toString(), clientPublicKey.toPublicJWK(), privateKey);
+        deviceId.toString(), clientPublicKey.toPublicJWK(), privateKey);
   }
 
   private String generateInitialDeviceHsmStateJws(
-      String clientId, String walletId, JWK clientPublicKeyJwk, ECPrivateKey privateKey)
+      String clientId, JWK clientPublicKeyJwk, ECPrivateKey privateKey)
       throws JOSEException {
 
     JWSHeader header = new JWSHeader.Builder(JWSAlgorithm.ES256).type(JOSEObjectType.JWT).build();
 
+    // Create device_keys list with initial client key entry
+    Map<String, Object> clientKeyEntry = new java.util.HashMap<>();
+    clientKeyEntry.put("public_key", clientPublicKeyJwk.toJSONObject());
+    clientKeyEntry.put("password_files", new ArrayList<>());
+
+    List<Map<String, Object>> deviceKeysList = List.of(clientKeyEntry);
+
     // Build the claims set matching DeviceHsmState structure
     JWTClaimsSet claimsSet =
         new JWTClaimsSet.Builder()
+            .claim("version", 1)
             .claim("client_id", clientId)
-            .claim("wallet_id", walletId)
-            .claim("client_public_key", clientPublicKeyJwk.toJSONObject())
-            .claim("keys", new ArrayList<>())
+            .claim("device_keys", deviceKeysList)
+            .claim("hsm_keys", new ArrayList<>())
             .build();
 
     // Create signed JWT
