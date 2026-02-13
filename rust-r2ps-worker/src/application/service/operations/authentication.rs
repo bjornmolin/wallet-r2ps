@@ -3,22 +3,51 @@ use crate::application::pending_auth_spi_port::{LoginSession, PendingAuthSpiPort
 use crate::application::session_key_spi_port::{SessionKey, SessionKeySpiPort};
 use crate::domain::value_objects::r2ps::{PakeRequest, PakeResponse};
 use crate::domain::{
-    DefaultCipherSuite, DeviceHsmState, InnerResponseData, PakePayloadVector, PasswordFile,
-    ServiceRequestError, SessionId,
+    DefaultCipherSuite, InnerResponseData, PakePayloadVector, PasswordFile, ServiceRequestError,
+    SessionId,
 };
 use argon2::password_hash::rand_core::OsRng;
+use base64::Engine;
+use base64::engine::general_purpose::URL_SAFE_NO_PAD;
+use josekit::jwk::Jwk;
 use opaque_ke::{
     CredentialFinalization, CredentialRequest, Identifiers, RegistrationRequest,
     RegistrationUpload, ServerLogin, ServerLoginParameters, ServerRegistration, ServerSetup,
 };
+use sha2::Digest;
 use std::sync::Arc;
 use tracing::{debug, warn};
 
+/// Computes RFC 7638 JWK thumbprint for EC keys
+fn compute_jwk_thumbprint(jwk: &Jwk) -> Result<String, ServiceRequestError> {
+    let crv = jwk
+        .curve()
+        .ok_or(ServiceRequestError::InvalidClientPublicKey)?;
+    let x = jwk
+        .parameter("x")
+        .and_then(|v| v.as_str())
+        .ok_or(ServiceRequestError::InvalidClientPublicKey)?;
+    let y = jwk
+        .parameter("y")
+        .and_then(|v| v.as_str())
+        .ok_or(ServiceRequestError::InvalidClientPublicKey)?;
+
+    // RFC 7638: canonical JSON with fields in lexicographic order
+    let thumbprint_input = format!(r#"{{"crv":"{}","kty":"EC","x":"{}","y":"{}"}}"#, crv, x, y);
+
+    let mut hasher = sha2::Sha256::new();
+    hasher.update(thumbprint_input.as_bytes());
+    Ok(URL_SAFE_NO_PAD.encode(hasher.finalize()))
+}
+
 /// Creates OPAQUE ServerLoginParameters with standardized context and identifiers
-fn create_server_login_parameters<'a: 'b, 'b>(device_id: &'a str) -> ServerLoginParameters<'a, 'b> {
+fn create_server_login_parameters<'a: 'b, 'b>(
+    client_identifier: &'a str,
+    server_identifier: &'a str,
+) -> ServerLoginParameters<'a, 'b> {
     let context = b"RPS-Ops";
-    let client = device_id.as_bytes();
-    let server = b"https://cloud-wallet.digg.se/rhsm";
+    let client = client_identifier.as_bytes();
+    let server = server_identifier.as_bytes();
 
     debug!(
         "OPAQUE context: '{}' hex: {}",
@@ -49,16 +78,19 @@ fn create_server_login_parameters<'a: 'b, 'b>(device_id: &'a str) -> ServerLogin
 pub struct AuthenticateStartOperation {
     opaque_server_setup: ServerSetup<DefaultCipherSuite>,
     pending_auth_spi_port: Arc<dyn PendingAuthSpiPort + Send + Sync>,
+    server_identifier: String,
 }
 
 impl AuthenticateStartOperation {
     pub fn new(
         opaque_server_setup: ServerSetup<DefaultCipherSuite>,
         pending_auth_spi_port: Arc<dyn PendingAuthSpiPort + Send + Sync>,
+        server_identifier: String,
     ) -> Self {
         Self {
             opaque_server_setup,
             pending_auth_spi_port,
+            server_identifier,
         }
     }
 }
@@ -72,10 +104,10 @@ impl ServiceOperation for AuthenticateStartOperation {
             pake_request.data
         );
 
+        // Get password file from device_keys using client_key_id from context
         let password_file_serialized = context
             .state
-            .password_file
-            .as_ref()
+            .get_password_file(&context.device_kid)
             .ok_or(ServiceRequestError::UnknownClient)?;
         let password_file = ServerRegistration::<DefaultCipherSuite>::deserialize(
             password_file_serialized.as_bytes(),
@@ -92,15 +124,23 @@ impl ServiceOperation for AuthenticateStartOperation {
                 ServiceRequestError::InvalidAuthenticateRequest
             })?;
 
+        // client_key_id (kid from JWS header) is the thumbprint
+        let device_kid = &context.device_kid;
+        debug!(
+            "Using client JWK thumbprint (device kid) for OPAQUE: {}",
+            device_kid
+        );
+
         let mut server_rng = OsRng;
-        let server_login_parameters = create_server_login_parameters(&context.state.client_id);
+        let server_login_parameters =
+            create_server_login_parameters(&device_kid, &self.server_identifier);
 
         let server_login_start_result = ServerLogin::start(
             &mut server_rng,
             &self.opaque_server_setup,
             Some(password_file),
             credential_request,
-            context.state.client_id.as_bytes(),
+            device_kid.as_bytes(),
             server_login_parameters,
         )
         .map_err(|e| {
@@ -135,16 +175,19 @@ impl ServiceOperation for AuthenticateStartOperation {
 pub struct AuthenticateFinishOperation {
     pending_auth_spi_port: Arc<dyn PendingAuthSpiPort + Send + Sync>,
     session_key_spi_port: Arc<dyn SessionKeySpiPort + Send + Sync>,
+    server_identifier: String,
 }
 
 impl AuthenticateFinishOperation {
     pub fn new(
         pending_auth_spi_port: Arc<dyn PendingAuthSpiPort + Send + Sync>,
         session_key_spi_port: Arc<dyn SessionKeySpiPort + Send + Sync>,
+        server_identifier: String,
     ) -> Self {
         Self {
             pending_auth_spi_port,
             session_key_spi_port,
+            server_identifier,
         }
     }
 }
@@ -167,7 +210,14 @@ impl ServiceOperation for AuthenticateFinishOperation {
             .get_pending_auth(&session_id)
             .ok_or(ServiceRequestError::UnknownSession)?;
 
-        let server_login_parameters = create_server_login_parameters(&context.state.client_id);
+        let device_kid = &context.device_kid;
+        debug!(
+            "Using client JWK thumbprint (device kid) for OPAQUE: {}",
+            device_kid
+        );
+
+        let server_login_parameters =
+            create_server_login_parameters(device_kid, &self.server_identifier);
 
         let server_login = session
             .take()
@@ -230,10 +280,17 @@ impl ServiceOperation for RegisterStartOperation {
                 ServiceRequestError::InvalidRegistrationRequest
             })?;
 
+        // client_key_id (kid from JWS header) is the thumbprint
+        let client_thumbprint = &context.device_kid;
+        debug!(
+            "Using client JWK thumbprint for OPAQUE: {}",
+            client_thumbprint
+        );
+
         let server_registration_start_result = ServerRegistration::<DefaultCipherSuite>::start(
             &self.opaque_server_setup,
             registration_request,
-            context.state.client_id.as_bytes(),
+            client_thumbprint.as_bytes(),
         )
         .map_err(|e| {
             warn!("invalid registration request evaluate: {:?}", e);
@@ -262,11 +319,13 @@ impl ServiceOperation for RegisterStartOperation {
 }
 
 // RegisterFinish Operation
-pub struct RegisterFinishOperation;
+pub struct RegisterFinishOperation {
+    server_identifier: String,
+}
 
 impl RegisterFinishOperation {
-    pub fn new() -> Self {
-        Self
+    pub fn new(server_identifier: String) -> Self {
+        Self { server_identifier }
     }
 }
 
@@ -290,11 +349,17 @@ impl ServiceOperation for RegisterFinishOperation {
             hex::encode(&password_file_serialized)
         );
 
-        let new_state = DeviceHsmState {
-            password_file: Some(PasswordFile(password_file_serialized)),
-            keys: Vec::new(),
-            ..context.state
-        };
+        debug!(
+            "Storing server identifier used in OPAQUE: {:?}",
+            &self.server_identifier
+        );
+
+        let mut new_state = context.state;
+        new_state.add_password_file(
+            &context.device_kid,
+            PasswordFile(password_file_serialized),
+            self.server_identifier.clone(),
+        )?;
 
         let payload = PakeResponse {
             task: None,

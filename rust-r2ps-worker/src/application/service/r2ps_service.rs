@@ -45,18 +45,22 @@ impl R2psService {
     pub fn new(
         server_public_key: Pem,
         server_private_key: Pem,
-        server_setup: Option<String>,
+        opaque_server_setup: Option<String>,
         r2ps_response_spi_port: Arc<dyn R2psResponseSpiPort + Send + Sync>,
         session_key_spi_port: Arc<dyn SessionKeySpiPort + Send + Sync>,
         hsm_spi_port: Arc<dyn HsmSpiPort + Send + Sync>,
         pending_auth_spi_port: Arc<dyn PendingAuthSpiPort + Send + Sync>,
+        opaque_server_identifier: String,
     ) -> Self {
-        let server_setup = match load_server_setup(&server_setup) {
+        let server_setup = match load_server_setup(&opaque_server_setup) {
             Ok(setup) => setup,
             Err(_e) => {
                 let setup = create_server_setup(&server_private_key)
                     .expect("Failed to create opaque server setup");
-                info!("SERVER_SETUP={}", BASE64_STANDARD.encode(setup.serialize()));
+                info!(
+                    "OPAQUE_SERVER_SETUP={}",
+                    BASE64_STANDARD.encode(setup.serialize())
+                );
                 setup
             }
         };
@@ -66,6 +70,7 @@ impl R2psService {
             session_key_spi_port.clone(),
             hsm_spi_port,
             pending_auth_spi_port,
+            opaque_server_identifier,
         );
 
         // Create signer from PEM
@@ -283,16 +288,27 @@ impl R2psRequestUseCase for R2psService {
             .decode_state_jws(hsm_worker_request.state_jws)
             .map_err(|_| R2psRequestError::InvalidState)?;
 
+        // Extract client public key kid from JWS header
+        let device_kid = peek_jws_kid(&hsm_worker_request.outer_request_jws)
+            .map_err(|_| R2psRequestError::OuterJwsError)?
+            .ok_or(R2psRequestError::OuterJwsError)?;
+
+        debug!("Peeked outer request JWS kid: {}", device_kid);
+
+        // Fetch the corresponding JWK from state using kid
+        let client_public_key = state
+            .find_device_key(&device_kid)
+            .ok_or(R2psRequestError::OuterJwsError)?
+            .public_key
+            .clone();
+
         let outer_request = self
-            .decode_outer_request_jws(
-                hsm_worker_request.outer_request_jws,
-                &state.client_public_key,
-            )
+            .decode_outer_request_jws(hsm_worker_request.outer_request_jws, &client_public_key)
             .map_err(|_| R2psRequestError::OuterJwsError)?;
 
         info!(
-            "Received request id {}, wallet_id {}",
-            hsm_worker_request.request_id, state.wallet_id
+            "Received request id {}, client_id {}",
+            hsm_worker_request.request_id, state.client_id
         );
 
         // TODO: Use JOSE 'aud' (audience) claim in the validation done inside decode_service_request_jws() instead
@@ -301,9 +317,7 @@ impl R2psRequestUseCase for R2psService {
         }
 
         let session_id = outer_request.session_id.as_ref();
-        let session_key = session_id
-            .as_ref()
-            .and_then(|id| self.session_key_spi_port.get(id));
+        let session_key = session_id.and_then(|id| self.session_key_spi_port.get(id));
 
         let inner_request = self
             .decrypt_inner_request(outer_request.inner_jwe.as_ref(), session_key.as_ref())
@@ -324,6 +338,7 @@ impl R2psRequestUseCase for R2psService {
             outer_request: outer_request.clone(),
             inner_request,
             session_id: session_id.cloned(),
+            device_kid: device_kid.clone(),
         };
 
         let operation_result = self
@@ -369,11 +384,16 @@ impl R2psRequestUseCase for R2psService {
                 InnerJwe::encrypt(&inner_response_json, &session_key)
                     .map_err(|_| R2psRequestError::EncryptionError)?
             }
-            EncryptOption::Device => encrypt_with_ec_jwk(
-                &inner_response_json,
-                &operation_result.state.client_public_key,
-            )
-            .map_err(|_| R2psRequestError::EncryptionError)?,
+            EncryptOption::Device => {
+                let client_public_key = operation_result
+                    .state
+                    .find_device_key(&device_kid)
+                    .ok_or(R2psRequestError::EncryptionError)?
+                    .public_key
+                    .clone();
+                encrypt_with_ec_jwk(&inner_response_json, &client_public_key)
+                    .map_err(|_| R2psRequestError::EncryptionError)?
+            }
         };
 
         let jws = self
@@ -386,7 +406,6 @@ impl R2psRequestUseCase for R2psService {
 
         let r2ps_response_jws = R2psResponseJws {
             request_id: hsm_worker_request.request_id.clone(),
-            wallet_id: operation_result.state.wallet_id.clone(),
             device_id: operation_result.state.client_id.clone(),
             http_status: 200,
             state_jws: new_state_jws,
@@ -483,4 +502,27 @@ fn encrypt_with_ec_jwk(
             Err(ServiceRequestError::JweError)
         }
     }
+}
+
+fn peek_jws_kid(jws: &str) -> Result<Option<String>, ServiceRequestError> {
+    use base64::prelude::BASE64_URL_SAFE_NO_PAD;
+
+    // Split JWS compact serialization (header.payload.signature)
+    let parts: Vec<&str> = jws.split('.').collect();
+    if parts.len() < 3 {
+        return Err(ServiceRequestError::JwsError);
+    }
+
+    // Decode the header (first part)
+    let header_bytes = BASE64_URL_SAFE_NO_PAD
+        .decode(parts[0])
+        .map_err(|_| ServiceRequestError::JwsError)?;
+
+    let header: serde_json::Value =
+        serde_json::from_slice(&header_bytes).map_err(|_| ServiceRequestError::JwsError)?;
+
+    Ok(header
+        .get("kid")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string()))
 }

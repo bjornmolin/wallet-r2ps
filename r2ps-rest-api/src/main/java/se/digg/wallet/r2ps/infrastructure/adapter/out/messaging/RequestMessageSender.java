@@ -18,7 +18,7 @@ public class RequestMessageSender implements RequestMessageSpiPort {
   }
 
   @Override
-  public void send(HsmWorkerRequest hsmWorkerRequest, UUID walletId) {
-    kafkaTemplate.send(DEST_TOPIC, walletId.toString(), hsmWorkerRequest);
+  public void send(HsmWorkerRequest hsmWorkerRequest, UUID deviceId) {
+    kafkaTemplate.send(DEST_TOPIC, deviceId.toString(), hsmWorkerRequest);
   }
 }

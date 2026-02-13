@@ -7,7 +7,7 @@ import java.util.List;
 import java.util.UUID;
 
 @RecordBuilder
-public record R2psResponseDto(UUID requestId, UUID walletId, UUID deviceId, int httpStatus,
+public record R2psResponseDto(UUID requestId, UUID deviceId, int httpStatus,
     String state_jws, String outer_request_jws,
     String pakeSessionId, List<Event> events) {
 }

@@ -25,6 +25,7 @@ pub struct OperationContext {
     pub outer_request: crate::domain::value_objects::r2ps::OuterRequest,
     pub inner_request: crate::domain::value_objects::r2ps::InnerRequest,
     pub session_id: Option<SessionId>,
+    pub device_kid: String, // kid from OuterRequest JWS header
 }
 
 pub struct OperationResult {
@@ -76,18 +77,21 @@ impl OperationDispatcher {
         session_key_spi_port: Arc<dyn SessionKeySpiPort + Send + Sync>,
         hsm_spi_port: Arc<dyn HsmSpiPort + Send + Sync>,
         pending_auth_spi_port: Arc<dyn PendingAuthSpiPort + Send + Sync>,
+        opaque_server_identifier: String,
     ) -> Self {
         Self {
             authenticate_start_op: AuthenticateStartOperation::new(
                 server_setup.clone(),
                 pending_auth_spi_port.clone(),
+                opaque_server_identifier.clone(),
             ),
             authenticate_finish_op: AuthenticateFinishOperation::new(
                 pending_auth_spi_port.clone(),
                 session_key_spi_port.clone(),
+                opaque_server_identifier.clone(),
             ),
             register_start_op: RegisterStartOperation::new(server_setup.clone()),
-            register_finish_op: RegisterFinishOperation::new(),
+            register_finish_op: RegisterFinishOperation::new(opaque_server_identifier),
             hsm_ecdsa_op: HsmSignOperation::new(hsm_spi_port.clone()),
             hsm_keygen_op: HsmGenerateKeyOperation::new(hsm_spi_port.clone()),
             hsm_delete_key_op: HsmDeleteKeyOperation,

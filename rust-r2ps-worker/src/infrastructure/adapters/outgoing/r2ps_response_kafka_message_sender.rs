@@ -27,7 +27,7 @@ impl R2psResponseSpiPort for R2psResponseKafkaMessageSender {
     fn send(&self, r2ps_response: R2psResponseJws) -> Result<(), R2psResponseError> {
         let response = match serde_json::to_string(&r2ps_response) {
             Ok(output_json) => {
-                let key = &r2ps_response.wallet_id;
+                let key = &r2ps_response.device_id; // device_id is client_id
                 let request_id = &r2ps_response.request_id;
                 let record = BaseRecord::to("r2ps-responses")
                     .key(key)

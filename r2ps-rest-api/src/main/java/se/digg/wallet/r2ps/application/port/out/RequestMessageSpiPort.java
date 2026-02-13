@@ -5,5 +5,5 @@ import se.digg.wallet.r2ps.domain.model.HsmWorkerRequest;
 import java.util.UUID;
 
 public interface RequestMessageSpiPort {
-  void send(HsmWorkerRequest hsmWorkerRequest, UUID walletId);
+  void send(HsmWorkerRequest hsmWorkerRequest, UUID deviceId);
 }
