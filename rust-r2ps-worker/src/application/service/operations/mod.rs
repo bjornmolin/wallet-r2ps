@@ -77,17 +77,20 @@ impl OperationDispatcher {
         session_key_spi_port: Arc<dyn SessionKeySpiPort + Send + Sync>,
         hsm_spi_port: Arc<dyn HsmSpiPort + Send + Sync>,
         pending_auth_spi_port: Arc<dyn PendingAuthSpiPort + Send + Sync>,
+        opaque_context: String,
         opaque_server_identifier: String,
     ) -> Self {
         Self {
             authenticate_start_op: AuthenticateStartOperation::new(
                 server_setup.clone(),
                 pending_auth_spi_port.clone(),
+                opaque_context.clone(),
                 opaque_server_identifier.clone(),
             ),
             authenticate_finish_op: AuthenticateFinishOperation::new(
                 pending_auth_spi_port.clone(),
                 session_key_spi_port.clone(),
+                opaque_context,
                 opaque_server_identifier.clone(),
             ),
             register_start_op: RegisterStartOperation::new(server_setup.clone()),

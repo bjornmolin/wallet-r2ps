@@ -7,52 +7,27 @@ use crate::domain::{
     SessionId,
 };
 use argon2::password_hash::rand_core::OsRng;
-use base64::Engine;
-use base64::engine::general_purpose::URL_SAFE_NO_PAD;
-use josekit::jwk::Jwk;
 use opaque_ke::{
     CredentialFinalization, CredentialRequest, Identifiers, RegistrationRequest,
     RegistrationUpload, ServerLogin, ServerLoginParameters, ServerRegistration, ServerSetup,
 };
-use sha2::Digest;
 use std::sync::Arc;
 use tracing::{debug, warn};
 
-/// Computes RFC 7638 JWK thumbprint for EC keys
-fn compute_jwk_thumbprint(jwk: &Jwk) -> Result<String, ServiceRequestError> {
-    let crv = jwk
-        .curve()
-        .ok_or(ServiceRequestError::InvalidClientPublicKey)?;
-    let x = jwk
-        .parameter("x")
-        .and_then(|v| v.as_str())
-        .ok_or(ServiceRequestError::InvalidClientPublicKey)?;
-    let y = jwk
-        .parameter("y")
-        .and_then(|v| v.as_str())
-        .ok_or(ServiceRequestError::InvalidClientPublicKey)?;
-
-    // RFC 7638: canonical JSON with fields in lexicographic order
-    let thumbprint_input = format!(r#"{{"crv":"{}","kty":"EC","x":"{}","y":"{}"}}"#, crv, x, y);
-
-    let mut hasher = sha2::Sha256::new();
-    hasher.update(thumbprint_input.as_bytes());
-    Ok(URL_SAFE_NO_PAD.encode(hasher.finalize()))
-}
-
 /// Creates OPAQUE ServerLoginParameters with standardized context and identifiers
 fn create_server_login_parameters<'a: 'b, 'b>(
+    context: &'a str,
     client_identifier: &'a str,
     server_identifier: &'a str,
 ) -> ServerLoginParameters<'a, 'b> {
-    let context = b"RPS-Ops";
+    let context_bytes = context.as_bytes();
     let client = client_identifier.as_bytes();
     let server = server_identifier.as_bytes();
 
     debug!(
         "OPAQUE context: '{}' hex: {}",
-        String::from_utf8_lossy(context),
-        hex::encode(context)
+        String::from_utf8_lossy(context_bytes),
+        hex::encode(context_bytes)
     );
     debug!(
         "OPAQUE client: '{}' hex: {}",
@@ -66,7 +41,7 @@ fn create_server_login_parameters<'a: 'b, 'b>(
     );
 
     ServerLoginParameters {
-        context: Some(context),
+        context: Some(context_bytes),
         identifiers: Identifiers {
             client: Some(client),
             server: Some(server),
@@ -76,20 +51,23 @@ fn create_server_login_parameters<'a: 'b, 'b>(
 
 // AuthenticateStart Operation
 pub struct AuthenticateStartOperation {
-    opaque_server_setup: ServerSetup<DefaultCipherSuite>,
+    server_setup: ServerSetup<DefaultCipherSuite>,
     pending_auth_spi_port: Arc<dyn PendingAuthSpiPort + Send + Sync>,
+    context: String,
     server_identifier: String,
 }
 
 impl AuthenticateStartOperation {
     pub fn new(
-        opaque_server_setup: ServerSetup<DefaultCipherSuite>,
+        server_setup: ServerSetup<DefaultCipherSuite>,
         pending_auth_spi_port: Arc<dyn PendingAuthSpiPort + Send + Sync>,
+        context: String,
         server_identifier: String,
     ) -> Self {
         Self {
-            opaque_server_setup,
+            server_setup,
             pending_auth_spi_port,
+            context,
             server_identifier,
         }
     }
@@ -133,11 +111,11 @@ impl ServiceOperation for AuthenticateStartOperation {
 
         let mut server_rng = OsRng;
         let server_login_parameters =
-            create_server_login_parameters(&device_kid, &self.server_identifier);
+            create_server_login_parameters(&self.context, &device_kid, &self.server_identifier);
 
         let server_login_start_result = ServerLogin::start(
             &mut server_rng,
-            &self.opaque_server_setup,
+            &self.server_setup,
             Some(password_file),
             credential_request,
             device_kid.as_bytes(),
@@ -175,6 +153,7 @@ impl ServiceOperation for AuthenticateStartOperation {
 pub struct AuthenticateFinishOperation {
     pending_auth_spi_port: Arc<dyn PendingAuthSpiPort + Send + Sync>,
     session_key_spi_port: Arc<dyn SessionKeySpiPort + Send + Sync>,
+    context: String,
     server_identifier: String,
 }
 
@@ -182,11 +161,13 @@ impl AuthenticateFinishOperation {
     pub fn new(
         pending_auth_spi_port: Arc<dyn PendingAuthSpiPort + Send + Sync>,
         session_key_spi_port: Arc<dyn SessionKeySpiPort + Send + Sync>,
+        context: String,
         server_identifier: String,
     ) -> Self {
         Self {
             pending_auth_spi_port,
             session_key_spi_port,
+            context,
             server_identifier,
         }
     }
@@ -217,7 +198,7 @@ impl ServiceOperation for AuthenticateFinishOperation {
         );
 
         let server_login_parameters =
-            create_server_login_parameters(device_kid, &self.server_identifier);
+            create_server_login_parameters(&self.context, device_kid, &self.server_identifier);
 
         let server_login = session
             .take()
@@ -255,14 +236,12 @@ impl ServiceOperation for AuthenticateFinishOperation {
 
 // RegisterStart Operation
 pub struct RegisterStartOperation {
-    opaque_server_setup: ServerSetup<DefaultCipherSuite>,
+    server_setup: ServerSetup<DefaultCipherSuite>,
 }
 
 impl RegisterStartOperation {
-    pub fn new(opaque_server_setup: ServerSetup<DefaultCipherSuite>) -> Self {
-        Self {
-            opaque_server_setup,
-        }
+    pub fn new(server_setup: ServerSetup<DefaultCipherSuite>) -> Self {
+        Self { server_setup }
     }
 }
 
@@ -288,7 +267,7 @@ impl ServiceOperation for RegisterStartOperation {
         );
 
         let server_registration_start_result = ServerRegistration::<DefaultCipherSuite>::start(
-            &self.opaque_server_setup,
+            &self.server_setup,
             registration_request,
             client_thumbprint.as_bytes(),
         )

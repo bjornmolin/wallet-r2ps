@@ -50,6 +50,7 @@ impl R2psService {
         session_key_spi_port: Arc<dyn SessionKeySpiPort + Send + Sync>,
         hsm_spi_port: Arc<dyn HsmSpiPort + Send + Sync>,
         pending_auth_spi_port: Arc<dyn PendingAuthSpiPort + Send + Sync>,
+        opaque_context: String,
         opaque_server_identifier: String,
     ) -> Self {
         let server_setup = match load_server_setup(&opaque_server_setup) {
@@ -70,6 +71,7 @@ impl R2psService {
             session_key_spi_port.clone(),
             hsm_spi_port,
             pending_auth_spi_port,
+            opaque_context,
             opaque_server_identifier,
         );
 

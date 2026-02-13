@@ -56,6 +56,7 @@ pub fn run() {
         session_key_cache,
         hsm_wrapper,
         pending_auth_cache,
+        app_config.opaque_context.clone(),
         app_config.opaque_server_identifier.clone(),
     ));
 
