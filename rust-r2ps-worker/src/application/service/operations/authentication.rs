@@ -97,7 +97,7 @@ impl ServiceOperation for AuthenticateStartOperation {
 
         let decoded_request_data = pake_request.data.as_ref();
         let credential_request =
-            CredentialRequest::deserialize(&decoded_request_data).map_err(|e| {
+            CredentialRequest::deserialize(decoded_request_data).map_err(|e| {
                 warn!("error decoding pake request: {:?}", e);
                 ServiceRequestError::InvalidAuthenticateRequest
             })?;
@@ -111,7 +111,7 @@ impl ServiceOperation for AuthenticateStartOperation {
 
         let mut server_rng = OsRng;
         let server_login_parameters =
-            create_server_login_parameters(&self.context, &device_kid, &self.server_identifier);
+            create_server_login_parameters(&self.context, device_kid, &self.server_identifier);
 
         let server_login_start_result = ServerLogin::start(
             &mut server_rng,
@@ -188,7 +188,7 @@ impl ServiceOperation for AuthenticateFinishOperation {
 
         let session = self
             .pending_auth_spi_port
-            .get_pending_auth(&session_id)
+            .get_pending_auth(session_id)
             .ok_or(ServiceRequestError::UnknownSession)?;
 
         let device_kid = &context.device_kid;
@@ -205,7 +205,7 @@ impl ServiceOperation for AuthenticateFinishOperation {
             .ok_or(ServiceRequestError::InvalidAuthenticateRequest)?;
         let result = server_login
             .finish(
-                CredentialFinalization::deserialize(&decoded_request_data)
+                CredentialFinalization::deserialize(decoded_request_data)
                     .map_err(|_| ServiceRequestError::InvalidAuthenticateRequest)?,
                 server_login_parameters,
             )
@@ -218,7 +218,7 @@ impl ServiceOperation for AuthenticateFinishOperation {
         debug!("Derived shared session key: {:?}", session_key);
 
         self.session_key_spi_port
-            .store(&session_id, session_key)
+            .store(session_id, session_key)
             .map_err(|_| ServiceRequestError::InternalServerError)?;
 
         let payload = PakeResponse {
@@ -253,8 +253,8 @@ impl ServiceOperation for RegisterStartOperation {
 
         let decoded_request_data = pake_request.data.as_ref();
 
-        let registration_request = RegistrationRequest::deserialize(&decoded_request_data)
-            .map_err(|e| {
+        let registration_request =
+            RegistrationRequest::deserialize(decoded_request_data).map_err(|e| {
                 warn!("invalid registration request evaluate: {:?}", e);
                 ServiceRequestError::InvalidRegistrationRequest
             })?;
@@ -316,17 +316,14 @@ impl ServiceOperation for RegisterFinishOperation {
         let decoded_request_data = pake_payload.data.as_ref();
 
         let registration_request: RegistrationUpload<DefaultCipherSuite> =
-            RegistrationUpload::deserialize(&decoded_request_data).map_err(|e| {
+            RegistrationUpload::deserialize(decoded_request_data).map_err(|e| {
                 warn!("invalid registration request finalize: {:?}", e);
                 ServiceRequestError::InvalidRegistrationRequest
             })?;
 
         let password_file = ServerRegistration::<DefaultCipherSuite>::finish(registration_request);
         let password_file_serialized = password_file.serialize();
-        debug!(
-            "password file: {:?}",
-            hex::encode(&password_file_serialized)
-        );
+        debug!("password file: {:?}", hex::encode(password_file_serialized));
 
         debug!(
             "Storing server identifier used in OPAQUE: {:?}",

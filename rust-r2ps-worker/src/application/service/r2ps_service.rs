@@ -41,74 +41,50 @@ pub struct R2psService {
     state_jws_verifier: EcdsaJwsVerifier,
 }
 
+pub struct R2psPorts {
+    pub r2ps_response: Arc<dyn R2psResponseSpiPort + Send + Sync>,
+    pub session_key: Arc<dyn SessionKeySpiPort + Send + Sync>,
+    pub hsm: Arc<dyn HsmSpiPort + Send + Sync>,
+    pub pending_auth: Arc<dyn PendingAuthSpiPort + Send + Sync>,
+}
+
+pub struct OpaqueConfig {
+    pub opaque_server_setup: Option<String>,
+    pub opaque_context: String,
+    pub opaque_server_identifier: String,
+}
+
 impl R2psService {
     pub fn new(
         server_public_key: Pem,
         server_private_key: Pem,
-        opaque_server_setup: Option<String>,
-        r2ps_response_spi_port: Arc<dyn R2psResponseSpiPort + Send + Sync>,
-        session_key_spi_port: Arc<dyn SessionKeySpiPort + Send + Sync>,
-        hsm_spi_port: Arc<dyn HsmSpiPort + Send + Sync>,
-        pending_auth_spi_port: Arc<dyn PendingAuthSpiPort + Send + Sync>,
-        opaque_context: String,
-        opaque_server_identifier: String,
+        ports: R2psPorts,
+        opaque_config: OpaqueConfig,
     ) -> Self {
-        let server_setup = match load_server_setup(&opaque_server_setup) {
-            Ok(setup) => setup,
-            Err(_e) => {
-                let setup = create_server_setup(&server_private_key)
-                    .expect("Failed to create opaque server setup");
-                info!(
-                    "OPAQUE_SERVER_SETUP={}",
-                    BASE64_STANDARD.encode(setup.serialize())
-                );
-                setup
-            }
-        };
+        let server_setup =
+            resolve_server_setup(&opaque_config.opaque_server_setup, &server_private_key);
 
         let operation_dispatcher = OperationDispatcher::from_dependencies(
             server_setup,
-            session_key_spi_port.clone(),
-            hsm_spi_port,
-            pending_auth_spi_port,
-            opaque_context,
-            opaque_server_identifier,
+            ports.session_key.clone(),
+            ports.hsm,
+            ports.pending_auth,
+            opaque_config.opaque_context,
+            opaque_config.opaque_server_identifier,
         );
 
-        // Create signer from PEM
-        let pem_string = pem::encode(&server_private_key);
-        let jws_signer = ES256
-            .signer_from_pem(pem_string.as_bytes())
-            .map_err(|e| {
-                error!(
-                    "Failed to create signer from server private key PEM: {:?}",
-                    e
-                );
-                ServiceRequestError::JwsError
-            })
-            .expect("Failed to create signer from server private key");
-
-        // Create verifier from PEM
-        let public_key_pem = pem::encode(&server_public_key);
-        let state_jws_verifier = ES256
-            .verifier_from_pem(&public_key_pem)
-            .map_err(|e| {
-                error!(
-                    "Failed to create verifier from server public key PEM: {:?}",
-                    e
-                );
-                ServiceRequestError::JwsError
-            })
-            .expect("Failed to create state JWS verifier from server public key");
+        let (jws_signer, state_jws_verifier) =
+            jws_crypto_provider(&server_public_key, &server_private_key)
+                .expect("Failed to initialize JWS crypto from server keys");
 
         Self {
-            r2ps_response_spi_port,
+            r2ps_response_spi_port: ports.r2ps_response,
             r2ps_server_config: R2psServerConfig {
                 server_public_key,
                 server_private_key,
             },
             operation_dispatcher,
-            session_key_spi_port,
+            session_key_spi_port: ports.session_key,
             jws_signer,
             state_jws_verifier,
         }
@@ -279,6 +255,50 @@ impl R2psService {
     }
 }
 
+fn resolve_server_setup(
+    opaque_server_setup: &Option<String>,
+    server_private_key: &Pem,
+) -> ServerSetup<DefaultCipherSuite> {
+    match load_server_setup(opaque_server_setup) {
+        Ok(setup) => setup,
+        Err(_e) => {
+            let setup = create_server_setup(server_private_key)
+                .expect("Failed to create opaque server setup");
+            info!(
+                "OPAQUE_SERVER_SETUP={}",
+                BASE64_STANDARD.encode(setup.serialize())
+            );
+            setup
+        }
+    }
+}
+
+fn jws_crypto_provider(
+    server_public_key: &Pem,
+    server_private_key: &Pem,
+) -> Result<(EcdsaJwsSigner, EcdsaJwsVerifier), ServiceRequestError> {
+    // Create signer from PEM
+    let pem_string = pem::encode(server_private_key);
+    let jws_signer = ES256.signer_from_pem(pem_string.as_bytes()).map_err(|e| {
+        error!(
+            "Failed to create signer from server private key PEM: {:?}",
+            e
+        );
+        ServiceRequestError::JwsError
+    })?;
+
+    // Create verifier from PEM
+    let public_key_pem = pem::encode(server_public_key);
+    let state_jws_verifier = ES256.verifier_from_pem(&public_key_pem).map_err(|e| {
+        error!(
+            "Failed to create verifier from server public key PEM: {:?}",
+            e
+        );
+        ServiceRequestError::JwsError
+    })?;
+    Ok((jws_signer, state_jws_verifier))
+}
+
 impl R2psRequestUseCase for R2psService {
     fn execute(
         &self,
@@ -371,7 +391,7 @@ impl R2psRequestUseCase for R2psService {
         let inner_response_json =
             serde_json::to_vec(&inner_response).map_err(|_| R2psRequestError::EncryptionError)?;
 
-        let enc_option = request_type.encrypt_option().clone();
+        let enc_option = request_type.encrypt_option();
         debug!(
             "Inner response to {:?} will be encrypted with {:?} encryption",
             request_type, enc_option
