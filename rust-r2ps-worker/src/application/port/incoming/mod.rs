@@ -1,3 +1,3 @@
-pub mod r2ps_request_use_case;
+pub mod worker_request_use_case;
 
-pub use r2ps_request_use_case::R2psRequestUseCase;
+pub use worker_request_use_case::WorkerRequestUseCase;

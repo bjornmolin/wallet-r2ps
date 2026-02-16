@@ -1,4 +1,4 @@
 pub mod operations;
-pub mod r2ps_service;
+pub mod worker_service;
 
-pub use r2ps_service::R2psService;
+pub use worker_service::WorkerService;

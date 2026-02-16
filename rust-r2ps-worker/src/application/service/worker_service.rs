@@ -2,12 +2,12 @@ use crate::application::hsm_spi_port::HsmSpiPort;
 use crate::application::pending_auth_spi_port::PendingAuthSpiPort;
 use crate::application::session_key_spi_port::{SessionKey, SessionKeySpiPort};
 
-use crate::application::{R2psRequestId, R2psRequestUseCase, R2psResponseSpiPort};
+use crate::application::{WorkerRequestId, WorkerRequestUseCase, WorkerResponseSpiPort};
 use crate::define_byte_vector;
 use crate::domain::value_objects::r2ps::{OuterRequest, SessionId};
 use crate::domain::{
     DefaultCipherSuite, DeviceHsmState, EncryptOption, HsmWorkerRequest, InnerJwe, InnerRequest,
-    OuterResponse, R2psRequestError, R2psResponseJws, R2psServerConfig, ServiceRequestError,
+    OuterResponse, WorkerRequestError, WorkerResponseJws, WorkerServerConfig, ServiceRequestError,
 };
 use argon2::password_hash::rand_core::OsRng;
 use base64::Engine;
@@ -31,9 +31,9 @@ define_byte_vector!(DecryptedData);
 
 use super::operations::{OperationContext, OperationDispatcher};
 
-pub struct R2psService {
-    r2ps_response_spi_port: Arc<dyn R2psResponseSpiPort + Send + Sync>,
-    r2ps_server_config: R2psServerConfig,
+pub struct WorkerService {
+    worker_response_spi_port: Arc<dyn WorkerResponseSpiPort + Send + Sync>,
+    worker_server_config: WorkerServerConfig,
     session_key_spi_port: Arc<dyn SessionKeySpiPort + Send + Sync>,
     // Operation dispatcher
     operation_dispatcher: OperationDispatcher,
@@ -41,8 +41,8 @@ pub struct R2psService {
     state_jws_verifier: EcdsaJwsVerifier,
 }
 
-pub struct R2psPorts {
-    pub r2ps_response: Arc<dyn R2psResponseSpiPort + Send + Sync>,
+pub struct WorkerPorts {
+    pub worker_response: Arc<dyn WorkerResponseSpiPort + Send + Sync>,
     pub session_key: Arc<dyn SessionKeySpiPort + Send + Sync>,
     pub hsm: Arc<dyn HsmSpiPort + Send + Sync>,
     pub pending_auth: Arc<dyn PendingAuthSpiPort + Send + Sync>,
@@ -54,15 +54,15 @@ pub struct OpaqueConfig {
     pub opaque_server_identifier: String,
 }
 
-impl R2psService {
+impl WorkerService {
     pub fn new(
         server_public_key: Pem,
         server_private_key: Pem,
-        ports: R2psPorts,
+        ports: WorkerPorts,
         opaque_config: OpaqueConfig,
     ) -> Self {
         let server_setup =
-            resolve_server_setup(&opaque_config.opaque_server_setup, &server_private_key);
+            init_server_setup(&opaque_config.opaque_server_setup, &server_private_key);
 
         let operation_dispatcher = OperationDispatcher::from_dependencies(
             server_setup,
@@ -78,8 +78,8 @@ impl R2psService {
                 .expect("Failed to initialize JWS crypto from server keys");
 
         Self {
-            r2ps_response_spi_port: ports.r2ps_response,
-            r2ps_server_config: R2psServerConfig {
+            worker_response_spi_port: ports.worker_response,
+            worker_server_config: WorkerServerConfig {
                 server_public_key,
                 server_private_key,
             },
@@ -117,7 +117,7 @@ impl R2psService {
         let inner_request = jwe
             .decrypt(
                 enc_option,
-                &self.r2ps_server_config.server_private_key,
+                &self.worker_server_config.server_private_key,
                 session_key,
             )
             .map_err(|e| {
@@ -255,7 +255,7 @@ impl R2psService {
     }
 }
 
-fn resolve_server_setup(
+fn init_server_setup(
     opaque_server_setup: &Option<String>,
     server_private_key: &Pem,
 ) -> ServerSetup<DefaultCipherSuite> {
@@ -299,34 +299,34 @@ fn jws_crypto_provider(
     Ok((jws_signer, state_jws_verifier))
 }
 
-impl R2psRequestUseCase for R2psService {
+impl WorkerRequestUseCase for WorkerService {
     fn execute(
         &self,
         hsm_worker_request: HsmWorkerRequest,
-    ) -> Result<R2psRequestId, R2psRequestError> {
+    ) -> Result<WorkerRequestId, WorkerRequestError> {
         let start = Instant::now();
 
         let state = self
             .decode_state_jws(hsm_worker_request.state_jws)
-            .map_err(|_| R2psRequestError::InvalidState)?;
+            .map_err(|_| WorkerRequestError::InvalidState)?;
 
         // Extract client public key kid from JWS header
         let device_kid = peek_jws_kid(&hsm_worker_request.outer_request_jws)
-            .map_err(|_| R2psRequestError::OuterJwsError)?
-            .ok_or(R2psRequestError::OuterJwsError)?;
+            .map_err(|_| WorkerRequestError::OuterJwsError)?
+            .ok_or(WorkerRequestError::OuterJwsError)?;
 
         debug!("Peeked outer request JWS kid: {}", device_kid);
 
         // Fetch the corresponding JWK from state using kid
         let client_public_key = state
             .find_device_key(&device_kid)
-            .ok_or(R2psRequestError::OuterJwsError)?
+            .ok_or(WorkerRequestError::OuterJwsError)?
             .public_key
             .clone();
 
         let outer_request = self
             .decode_outer_request_jws(hsm_worker_request.outer_request_jws, &client_public_key)
-            .map_err(|_| R2psRequestError::OuterJwsError)?;
+            .map_err(|_| WorkerRequestError::OuterJwsError)?;
 
         info!(
             "Received request id {}, client_id {}",
@@ -335,7 +335,7 @@ impl R2psRequestUseCase for R2psService {
 
         // TODO: Use JOSE 'aud' (audience) claim in the validation done inside decode_service_request_jws() instead
         if outer_request.context != "hsm" {
-            return Err(R2psRequestError::UnsupportedContext);
+            return Err(WorkerRequestError::UnsupportedContext);
         }
 
         let session_id = outer_request.session_id.as_ref();
@@ -343,7 +343,7 @@ impl R2psRequestUseCase for R2psService {
 
         let inner_request = self
             .decrypt_inner_request(outer_request.inner_jwe.as_ref(), session_key.as_ref())
-            .map_err(R2psRequestError::ServiceError)?;
+            .map_err(WorkerRequestError::ServiceError)?;
 
         debug!("Inner request: {:#?}", inner_request);
 
@@ -366,14 +366,14 @@ impl R2psRequestUseCase for R2psService {
         let operation_result = self
             .operation_dispatcher
             .dispatch(context)
-            .map_err(R2psRequestError::ServiceError)?;
+            .map_err(WorkerRequestError::ServiceError)?;
 
         debug!("Operation result: {:#?}", operation_result.data);
 
         let encoded_result = operation_result
             .data
             .serialize()
-            .map_err(|_| R2psRequestError::EncryptionError)?;
+            .map_err(|_| WorkerRequestError::EncryptionError)?;
 
         let ttl = match session_id.as_ref() {
             Some(id) => self.session_key_spi_port.get_remaining_ttl(id),
@@ -382,14 +382,14 @@ impl R2psRequestUseCase for R2psService {
 
         // Create InnerResponse with the serialized data
         let serialized_data = String::from_utf8(encoded_result.clone())
-            .map_err(|_| R2psRequestError::EncryptionError)?;
+            .map_err(|_| WorkerRequestError::EncryptionError)?;
         let inner_response = operation_result.to_inner_response(serialized_data, ttl);
 
         debug!("Inner response: {:#?}", inner_response);
 
         // Serialize InnerResponse to JSON
         let inner_response_json =
-            serde_json::to_vec(&inner_response).map_err(|_| R2psRequestError::EncryptionError)?;
+            serde_json::to_vec(&inner_response).map_err(|_| WorkerRequestError::EncryptionError)?;
 
         let enc_option = request_type.encrypt_option();
         debug!(
@@ -402,31 +402,31 @@ impl R2psRequestUseCase for R2psService {
             EncryptOption::Session => {
                 let session_key = session_key
                     .clone()
-                    .ok_or(R2psRequestError::UnknownSession)?;
+                    .ok_or(WorkerRequestError::UnknownSession)?;
                 InnerJwe::encrypt(&inner_response_json, &session_key)
-                    .map_err(|_| R2psRequestError::EncryptionError)?
+                    .map_err(|_| WorkerRequestError::EncryptionError)?
             }
             EncryptOption::Device => {
                 let client_public_key = operation_result
                     .state
                     .find_device_key(&device_kid)
-                    .ok_or(R2psRequestError::EncryptionError)?
+                    .ok_or(WorkerRequestError::EncryptionError)?
                     .public_key
                     .clone();
                 encrypt_with_ec_jwk(&inner_response_json, &client_public_key)
-                    .map_err(|_| R2psRequestError::EncryptionError)?
+                    .map_err(|_| WorkerRequestError::EncryptionError)?
             }
         };
 
         let jws = self
             .create_outer_response(inner_jwe, operation_result.session_id.as_ref())
-            .map_err(|_| R2psRequestError::OuterJwsError)?;
+            .map_err(|_| WorkerRequestError::OuterJwsError)?;
 
         let new_state_jws = self
             .encode_state_jws(&operation_result.state)
-            .map_err(|_| R2psRequestError::OuterJwsError)?;
+            .map_err(|_| WorkerRequestError::OuterJwsError)?;
 
-        let r2ps_response_jws = R2psResponseJws {
+        let worker_response_jws = WorkerResponseJws {
             request_id: hsm_worker_request.request_id.clone(),
             device_id: operation_result.state.client_id.clone(),
             http_status: 200,
@@ -442,10 +442,10 @@ impl R2psRequestUseCase for R2psService {
         );
 
         let request_id = self
-            .r2ps_response_spi_port
-            .send(r2ps_response_jws.clone())
-            .map(|_| r2ps_response_jws.request_id.clone())
-            .map_err(|_| R2psRequestError::ConnectionError)?;
+            .worker_response_spi_port
+            .send(worker_response_jws.clone())
+            .map(|_| worker_response_jws.request_id.clone())
+            .map_err(|_| WorkerRequestError::ConnectionError)?;
 
         let finished_elapsed = start.elapsed();
 

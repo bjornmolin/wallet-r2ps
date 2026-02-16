@@ -66,7 +66,7 @@ pub struct HsmWorkerRequest {
 // Define your output message structure
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct R2psResponseJws {
+pub struct WorkerResponseJws {
     pub request_id: String,
     pub device_id: String,
     pub http_status: u16,
@@ -287,7 +287,7 @@ impl PakeRequest {
 }
 
 #[derive(Debug, Clone)]
-pub struct R2psServerConfig {
+pub struct WorkerServerConfig {
     //pub private_key_jwk: Jwk,
     pub server_public_key: Pem,
     pub server_private_key: Pem,
@@ -338,7 +338,7 @@ impl From<JoseError> for ServiceRequestError {
 }
 
 #[derive(Debug)]
-pub enum R2psRequestError {
+pub enum WorkerRequestError {
     ConnectionError,
     UnknownClient,
     OuterJwsError,
