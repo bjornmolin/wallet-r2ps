@@ -78,7 +78,7 @@ impl HsmWrapper {
 
         let result = HsmWrapper {
             pkcs11,
-            slot: slot.clone(),
+            slot: *slot,
             wrap_key_alias,
             user_pin,
         };

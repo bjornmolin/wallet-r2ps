@@ -1,4 +1,4 @@
-use crate::application::{R2psRequestUseCase, R2psService};
+use crate::application::{WorkerRequestUseCase, WorkerService};
 use crate::domain::{HsmWorkerRequest, HsmWorkerRequestDto};
 use crate::infrastructure::KafkaConfig;
 use rdkafka::consumer::{BaseConsumer, Consumer};
@@ -10,24 +10,24 @@ use std::thread::{JoinHandle, spawn};
 use std::time::Duration;
 use tracing::{debug, error, warn};
 
-pub struct R2psRequestKafkaMessageReceiver {
-    r2ps_service: Arc<R2psService>,
+pub struct WorkerRequestKafkaReceiver {
+    worker_service: Arc<WorkerService>,
     running: Arc<AtomicBool>,
 }
 
-impl R2psRequestKafkaMessageReceiver {
+impl WorkerRequestKafkaReceiver {
     pub fn new(
-        r2ps_service: Arc<R2psService>,
+        worker_service: Arc<WorkerService>,
         running: Arc<AtomicBool>,
-    ) -> R2psRequestKafkaMessageReceiver {
-        R2psRequestKafkaMessageReceiver {
-            r2ps_service,
+    ) -> WorkerRequestKafkaReceiver {
+        WorkerRequestKafkaReceiver {
+            worker_service,
             running,
         }
     }
 
     pub fn start_worker_thread(&self, config: Arc<KafkaConfig>) -> JoinHandle<()> {
-        let r2ps_service = self.r2ps_service.clone();
+        let worker_service = self.worker_service.clone();
         let running = self.running.clone();
 
         spawn(move || {
@@ -93,7 +93,7 @@ impl R2psRequestKafkaMessageReceiver {
                         };
 
                         // Process the message (example: convert to uppercase)
-                        match r2ps_service.execute(hsm_worker_request) {
+                        match worker_service.execute(hsm_worker_request) {
                             Ok(request_id) => {
                                 // Serialize output message to JSON
                                 debug!("HsmWorkerRequest {} processed successfully", request_id);

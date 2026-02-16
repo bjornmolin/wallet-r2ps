@@ -24,7 +24,7 @@ impl ServiceOperation for SessionEndOperation {
             .ok_or(ServiceRequestError::UnknownSession)?;
 
         self.session_key_spi_port
-            .end_session(&session_id)
+            .end_session(session_id)
             .map_err(|_| ServiceRequestError::UnknownSession)?;
 
         let payload = PakeResponse {

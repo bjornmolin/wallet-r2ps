@@ -4,7 +4,7 @@ use pem::Pem;
 use tracing::{debug, error};
 
 pub fn load_pem_from_base64(pem_b64: &str) -> Result<Pem, LoadPemError> {
-    match BASE64_STANDARD.decode(&pem_b64) {
+    match BASE64_STANDARD.decode(pem_b64) {
         Ok(decoded_bytes) => match pem::parse(&decoded_bytes) {
             Ok(client_public_key) => Ok(client_public_key),
             Err(e) => {

@@ -1,17 +1,17 @@
-use crate::application::{R2psResponseError, R2psResponseSpiPort};
-use crate::domain::R2psResponseJws;
+use crate::application::{WorkerResponseError, WorkerResponseSpiPort};
+use crate::domain::WorkerResponseJws;
 use crate::infrastructure::KafkaConfig;
 use rdkafka::ClientConfig;
 use rdkafka::producer::{BaseProducer, BaseRecord};
 use std::time::Duration;
 use tracing::{debug, error};
 
-pub struct R2psResponseKafkaMessageSender {
+pub struct WorkerResponseKafkaSender {
     producer: BaseProducer,
 }
 
-impl R2psResponseKafkaMessageSender {
-    pub fn new(config: &KafkaConfig) -> R2psResponseKafkaMessageSender {
+impl WorkerResponseKafkaSender {
+    pub fn new(config: &KafkaConfig) -> WorkerResponseKafkaSender {
         let producer: BaseProducer = ClientConfig::new()
             .set("bootstrap.servers", &config.bootstrap_servers)
             .set("broker.address.family", &config.broker_address_family)
@@ -19,16 +19,16 @@ impl R2psResponseKafkaMessageSender {
             .create()
             .expect("Producer creation failed");
 
-        R2psResponseKafkaMessageSender { producer }
+        WorkerResponseKafkaSender { producer }
     }
 }
 
-impl R2psResponseSpiPort for R2psResponseKafkaMessageSender {
-    fn send(&self, r2ps_response: R2psResponseJws) -> Result<(), R2psResponseError> {
-        let response = match serde_json::to_string(&r2ps_response) {
+impl WorkerResponseSpiPort for WorkerResponseKafkaSender {
+    fn send(&self, worker_response: WorkerResponseJws) -> Result<(), WorkerResponseError> {
+        let response = match serde_json::to_string(&worker_response) {
             Ok(output_json) => {
-                let key = &r2ps_response.device_id; // device_id is client_id
-                let request_id = &r2ps_response.request_id;
+                let key = &worker_response.device_id; // device_id is client_id
+                let request_id = &worker_response.request_id;
                 let record = BaseRecord::to("r2ps-responses")
                     .key(key)
                     .payload(&output_json);
@@ -41,13 +41,13 @@ impl R2psResponseSpiPort for R2psResponseKafkaMessageSender {
                     }
                     Err((err, _)) => {
                         error!("Failed to send message: {:?}", err);
-                        Err(R2psResponseError::ConnectionError)
+                        Err(WorkerResponseError::ConnectionError)
                     }
                 }
             }
             Err(e) => {
                 error!("Failed to serialize output message: {:?}", e);
-                Err(R2psResponseError::ConnectionError)
+                Err(WorkerResponseError::ConnectionError)
             }
         };
 
