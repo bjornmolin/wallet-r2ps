@@ -7,7 +7,7 @@ use crate::define_byte_vector;
 use crate::domain::value_objects::r2ps::{OuterRequest, SessionId};
 use crate::domain::{
     DefaultCipherSuite, DeviceHsmState, EncryptOption, HsmWorkerRequest, InnerJwe, InnerRequest,
-    OuterResponse, WorkerRequestError, WorkerResponseJws, WorkerServerConfig, ServiceRequestError,
+    OuterResponse, ServiceRequestError, WorkerRequestError, WorkerResponseJws, WorkerServerConfig,
 };
 use argon2::password_hash::rand_core::OsRng;
 use base64::Engine;
@@ -88,6 +88,11 @@ impl WorkerService {
             jws_signer,
             state_jws_verifier,
         }
+    }
+
+    /// Returns a reference to the server configuration
+    pub fn server_config(&self) -> &WorkerServerConfig {
+        &self.worker_server_config
     }
 
     fn decrypt_inner_request(
@@ -179,52 +184,6 @@ impl WorkerService {
         Ok(token)
     }
 
-    fn encode_state_jws(&self, state: &DeviceHsmState) -> Result<String, ServiceRequestError> {
-        // Create JWT payload from state
-        let payload_json = serde_json::to_string(&state).map_err(|e| {
-            error!("Failed to serialize state: {:?}", e);
-            ServiceRequestError::SerializeStateError
-        })?;
-
-        let map: serde_json::Map<String, serde_json::Value> = serde_json::from_str(&payload_json)
-            .map_err(|e| {
-            error!("Failed to create payload map: {:?}", e);
-            ServiceRequestError::SerializeStateError
-        })?;
-
-        let payload = JwtPayload::from_map(map).map_err(|e| {
-            error!("Failed to create JwtPayload: {:?}", e);
-            ServiceRequestError::JwsError
-        })?;
-
-        // Create JWS header
-        let header = josekit::jws::JwsHeader::new();
-
-        let token = jwt::encode_with_signer(&payload, &header, &self.jws_signer).map_err(|e| {
-            error!("Failed to encode state JWS: {:?}", e);
-            ServiceRequestError::JwsError
-        })?;
-
-        Ok(token)
-    }
-
-    fn decode_state_jws(&self, state_jws: String) -> Result<DeviceHsmState, ServiceRequestError> {
-        // Decode and verify JWT
-        let (payload, _header) = jwt::decode_with_verifier(&state_jws, &self.state_jws_verifier)
-            .map_err(|e| {
-                error!("State JWS verification failed: {:?}", e);
-                debug!("State JWS: {}", state_jws);
-                ServiceRequestError::JwsError
-            })?;
-
-        let state: DeviceHsmState = serde_json::from_str(&payload.to_string()).map_err(|e| {
-            error!("Failed to deserialize state: {:?}", e);
-            ServiceRequestError::JwsError
-        })?;
-
-        debug!("decoded state JWS: {:#?}", state);
-        Ok(state)
-    }
     fn decode_outer_request_jws(
         &self,
         outer_request_jws: String,
@@ -306,9 +265,11 @@ impl WorkerRequestUseCase for WorkerService {
     ) -> Result<WorkerRequestId, WorkerRequestError> {
         let start = Instant::now();
 
-        let state = self
-            .decode_state_jws(hsm_worker_request.state_jws)
-            .map_err(|_| WorkerRequestError::InvalidState)?;
+        let state = DeviceHsmState::decode_from_jws(
+            &hsm_worker_request.state_jws,
+            &self.state_jws_verifier,
+        )
+        .map_err(|_| WorkerRequestError::InvalidState)?;
 
         // Extract client public key kid from JWS header
         let device_kid = peek_jws_kid(&hsm_worker_request.outer_request_jws)
@@ -422,8 +383,9 @@ impl WorkerRequestUseCase for WorkerService {
             .create_outer_response(inner_jwe, operation_result.session_id.as_ref())
             .map_err(|_| WorkerRequestError::OuterJwsError)?;
 
-        let new_state_jws = self
-            .encode_state_jws(&operation_result.state)
+        let new_state_jws = operation_result
+            .state
+            .encode_to_jws(&self.jws_signer)
             .map_err(|_| WorkerRequestError::OuterJwsError)?;
 
         let worker_response_jws = WorkerResponseJws {

@@ -1,8 +1,11 @@
 use crate::domain::{DefaultCipherSuite, HsmKey, ServiceRequestError};
 use generic_array::GenericArray;
 use josekit::jwk::Jwk;
+use josekit::jws::{JwsSigner, JwsVerifier};
+use josekit::jwt::{self, JwtPayload};
 use opaque_ke::ServerRegistrationLen;
 use serde::{Deserialize, Serialize};
+use tracing::{debug, error};
 
 #[derive(Clone, Serialize, Deserialize)]
 pub struct PasswordFile(pub GenericArray<u8, ServerRegistrationLen<DefaultCipherSuite>>);
@@ -165,5 +168,57 @@ impl DeviceHsmState {
 
         entry.password_files.push(password_file_entry);
         Ok(())
+    }
+
+    // === JWS encoding/decoding ===
+
+    /// Encode state as JWS using provided signer
+    pub fn encode_to_jws(&self, signer: &dyn JwsSigner) -> Result<String, ServiceRequestError> {
+        // Create JWT payload from state
+        let payload_json = serde_json::to_string(&self).map_err(|e| {
+            error!("Failed to serialize state: {:?}", e);
+            ServiceRequestError::SerializeStateError
+        })?;
+
+        let map: serde_json::Map<String, serde_json::Value> = serde_json::from_str(&payload_json)
+            .map_err(|e| {
+            error!("Failed to create payload map: {:?}", e);
+            ServiceRequestError::SerializeStateError
+        })?;
+
+        let payload = JwtPayload::from_map(map).map_err(|e| {
+            error!("Failed to create JwtPayload: {:?}", e);
+            ServiceRequestError::JwsError
+        })?;
+
+        // Create JWS header
+        let header = josekit::jws::JwsHeader::new();
+
+        let token = jwt::encode_with_signer(&payload, &header, signer).map_err(|e| {
+            error!("Failed to encode state JWS: {:?}", e);
+            ServiceRequestError::JwsError
+        })?;
+
+        Ok(token)
+    }
+
+    /// Decode state from JWS using provided verifier
+    pub fn decode_from_jws(
+        jws: &str,
+        verifier: &dyn JwsVerifier,
+    ) -> Result<Self, ServiceRequestError> {
+        // Decode and verify JWT
+        let (payload, _header) = jwt::decode_with_verifier(jws, verifier).map_err(|e| {
+            error!("State JWS verification failed: {:?}", e);
+            ServiceRequestError::JwsError
+        })?;
+
+        let state: DeviceHsmState = serde_json::from_str(&payload.to_string()).map_err(|e| {
+            error!("Failed to deserialize state: {:?}", e);
+            ServiceRequestError::JwsError
+        })?;
+
+        debug!("decoded state JWS: {:#?}", state);
+        Ok(state)
     }
 }
