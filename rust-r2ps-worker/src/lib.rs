@@ -1,3 +1,4 @@
+use crate::application::WorkerRequestUseCase;
 use crate::infrastructure::bootstrap::build_services;
 use crate::infrastructure::config::app_config::AppConfig;
 use crate::infrastructure::{
@@ -27,11 +28,11 @@ pub fn run() {
     .expect("Error setting Ctrl-C handler");
 
     let (worker_service, state_init_service) = build_services(&app_config, kafka_config.clone());
-    let worker_service = Arc::new(worker_service);
+    let worker_use_case: Arc<dyn WorkerRequestUseCase + Send + Sync> = Arc::new(worker_service);
     let state_init_service = Arc::new(state_init_service);
 
     // start request worker
-    let worker_kafka_receiver = WorkerRequestKafkaReceiver::new(worker_service, running.clone());
+    let worker_kafka_receiver = WorkerRequestKafkaReceiver::new(worker_use_case, running.clone());
     let join_handle = worker_kafka_receiver.start_worker_thread(kafka_config.clone());
 
     // start state init request worker

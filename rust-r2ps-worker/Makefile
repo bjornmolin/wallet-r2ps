@@ -1,6 +1,6 @@
 SHELL := /bin/bash
 
-.PHONY: generate_openapi docs clean help
+.PHONY: generate_openapi docs clean help check
 
 ## Generate openapi.json from domain model
 generate_openapi: openapi.json
@@ -29,3 +29,22 @@ help:
 		read -r target < <(grep -A1 "^## $${desc}$$" $(MAKEFILE_LIST) | tail -1); \
 		printf "  \033[36m%-20s\033[0m %s\n" "$${target%%:*}" "$$desc"; \
 	done
+
+## format, build, test and run clippy
+check:
+	@set -e; \
+	run() { \
+		name="$$1"; shift; \
+		tmp="$$(mktemp)"; \
+		if "$$@" >"$$tmp" 2>&1; then \
+			printf "\033[32m✓ %s\033[0m\n" "$$name"; \
+		else \
+			cat "$$tmp"; \
+			rm -f "$$tmp"; \
+			exit 1; \
+		fi; \
+		rm -f "$$tmp"; \
+	}; \
+	run fmt cargo fmt; \
+	run test cargo test -q; \
+	run clippy cargo clippy -q -- -D warnings;

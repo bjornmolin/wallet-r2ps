@@ -100,7 +100,7 @@ public class R2psRequestController {
       return ResponseEntity.accepted().location(location).body(responseBody);
     }
 
-    if (r2psResponse.get().httpStatus() != HttpStatus.OK.value()) {
+    if (!r2psResponse.get().status().equals("OK")) {
       Optional<AsyncResponseError> errorPayload = parseErrorPayload(r2psResponse.get());
 
       AsyncResponseDto<String> registerResponseDto =
@@ -110,14 +110,14 @@ public class R2psRequestController {
               Optional.empty(),
               Optional.empty(),
               errorPayload);
-      return ResponseEntity.status(r2psResponse.get().httpStatus()).body(registerResponseDto);
+      return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(registerResponseDto);
     }
 
     AsyncResponseDto<String> registerResponseDto =
         new AsyncResponseDto<>(
             correlationId,
             AsyncResponseStatus.COMPLETE,
-            Optional.of(r2psResponse.get().serviceResponseJws()),
+            r2psResponse.get().outerResponseJws(),
             Optional.empty(),
             Optional.empty());
     log.info("registerResponseDto {}", registerResponseDto);
@@ -232,21 +232,21 @@ public class R2psRequestController {
   }
 
   private Optional<AsyncResponseError> parseErrorPayload(R2psResponse r2psResponse) {
-    // TODO this is not working since we're not sending error payloads on Kafka
-    try {
-      ServiceRequestHandlingException serviceRequestHandlingException =
-          objectMapper.readValue(
-              r2psResponse.serviceResponseJws(), ServiceRequestHandlingException.class);
-      if (serviceRequestHandlingException != null) {
-        log.info("Parsed error payload: {}", serviceRequestHandlingException.getMessage());
-        return Optional.of(
-            new AsyncResponseError(
-                serviceRequestHandlingException.getMessage(),
-                serviceRequestHandlingException.getErrorCode().getResponseCode()));
-      }
-    } catch (JsonProcessingException e) {
-      log.debug("Could not parse error payload", e);
-    }
+    // TODO this should look at the error_message
+//    try {
+//      ServiceRequestHandlingException serviceRequestHandlingException =
+//          objectMapper.readValue(
+//              r2psResponse.outerResponseJws(), ServiceRequestHandlingException.class);
+//      if (serviceRequestHandlingException != null) {
+//        log.info("Parsed error payload: {}", serviceRequestHandlingException.getMessage());
+//        return Optional.of(
+//            new AsyncResponseError(
+//                serviceRequestHandlingException.getMessage(),
+//                serviceRequestHandlingException.getErrorCode().getResponseCode()));
+//      }
+//    } catch (JsonProcessingException e) {
+//      log.debug("Could not parse error payload", e);
+//    }
     return Optional.empty();
   }
 

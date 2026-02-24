@@ -47,6 +47,7 @@ impl OperationResult {
             data: Some(serialized_data),
             expires_in: ttl.map(to_iso8601_duration),
             status: Status::Ok,
+            error_message: None,
         }
     }
 }
