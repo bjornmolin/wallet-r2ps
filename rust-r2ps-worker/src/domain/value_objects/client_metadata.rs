@@ -162,10 +162,10 @@ impl DeviceHsmState {
             .map(|pf_entry| &pf_entry.password_file)
     }
 
-    /// Adds a password file entry to the client key for the given kid.
+    /// Replaces the password file list with a single new entry for the client key with the given kid.
     /// If `authorization_code` is provided, it must match `dev_authorization_code` on the entry,
     /// after which that code is cleared (consumed).
-    pub fn add_password_file(
+    pub fn set_password_file(
         &mut self,
         kid: &str,
         password_file_entry: PasswordFileEntry,
@@ -182,7 +182,7 @@ impl DeviceHsmState {
             entry.dev_authorization_code = None;
         }
 
-        entry.password_files.push(password_file_entry);
+        entry.password_files = vec![password_file_entry];
         Ok(())
     }
 }
