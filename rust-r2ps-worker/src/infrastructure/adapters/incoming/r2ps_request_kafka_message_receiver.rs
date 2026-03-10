@@ -1,4 +1,4 @@
-use crate::application::{WorkerRequestUseCase, WorkerService};
+use crate::application::WorkerRequestUseCase;
 use crate::domain::{HsmWorkerRequest, HsmWorkerRequestDto};
 use crate::infrastructure::KafkaConfig;
 use rdkafka::consumer::{BaseConsumer, Consumer};
@@ -11,23 +11,23 @@ use std::time::Duration;
 use tracing::{debug, error, warn};
 
 pub struct WorkerRequestKafkaReceiver {
-    worker_service: Arc<WorkerService>,
+    worker_use_case: Arc<dyn WorkerRequestUseCase + Send + Sync>,
     running: Arc<AtomicBool>,
 }
 
 impl WorkerRequestKafkaReceiver {
     pub fn new(
-        worker_service: Arc<WorkerService>,
+        worker_use_case: Arc<dyn WorkerRequestUseCase + Send + Sync>,
         running: Arc<AtomicBool>,
     ) -> WorkerRequestKafkaReceiver {
         WorkerRequestKafkaReceiver {
-            worker_service,
+            worker_use_case,
             running,
         }
     }
 
     pub fn start_worker_thread(&self, config: Arc<KafkaConfig>) -> JoinHandle<()> {
-        let worker_service = self.worker_service.clone();
+        let worker_use_case = self.worker_use_case.clone();
         let running = self.running.clone();
 
         spawn(move || {
@@ -93,7 +93,7 @@ impl WorkerRequestKafkaReceiver {
                         };
 
                         // Process the message (example: convert to uppercase)
-                        match worker_service.execute(hsm_worker_request) {
+                        match worker_use_case.execute(hsm_worker_request) {
                             Ok(request_id) => {
                                 // Serialize output message to JSON
                                 debug!("HsmWorkerRequest {} processed successfully", request_id);

@@ -40,14 +40,9 @@ impl OperationResult {
         serialized_data: String,
         ttl: Option<std::time::Duration>,
     ) -> crate::domain::value_objects::r2ps::InnerResponse {
-        use crate::domain::value_objects::r2ps::{InnerResponse, Status, to_iso8601_duration};
+        use crate::domain::value_objects::r2ps::{InnerResponse, to_iso8601_duration};
 
-        InnerResponse {
-            version: 1,
-            data: Some(serialized_data),
-            expires_in: ttl.map(to_iso8601_duration),
-            status: Status::Ok,
-        }
+        InnerResponse::ok(serialized_data, ttl.map(to_iso8601_duration))
     }
 }
 

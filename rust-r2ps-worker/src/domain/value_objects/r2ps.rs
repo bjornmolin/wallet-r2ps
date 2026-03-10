@@ -58,20 +58,6 @@ pub struct HsmWorkerRequestDto {
     pub outer_request_jws: TypedJws<OuterRequest>,
 }
 
-/// DTO for R2PS responses sent back via Kafka.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[cfg_attr(feature = "openapi", derive(ToSchema))]
-#[serde(rename_all = "camelCase")]
-pub struct R2psResponseDto {
-    /// Correlation ID matching the original request
-    pub request_id: String,
-    pub http_status: u16,
-    /// JWS-encoded updated device state (DeviceHsmState)
-    pub state_jws: TypedJws<DeviceHsmState>,
-    /// JWS-encoded service response (OuterResponse)
-    pub service_response_jws: TypedJws<OuterResponse>,
-}
-
 /// An HSM worker request containing the device state and the client's outer request.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(ToSchema))]
@@ -93,11 +79,14 @@ pub struct HsmWorkerRequest {
 pub struct WorkerResponse {
     /// Correlation ID matching the original request
     pub request_id: String,
-    pub http_status: u16,
     /// JWS-encoded updated device state (DeviceHsmState)
     pub state_jws: Option<TypedJws<DeviceHsmState>>,
     /// JWS-encoded service response (OuterResponse)
-    pub service_response_jws: TypedJws<OuterResponse>,
+    pub outer_response_jws: Option<TypedJws<OuterResponse>>,
+    /// The result status of the operation
+    pub status: Status,
+    /// Error message if the operation failed (serialized JSON)
+    pub error_message: Option<String>,
 }
 
 /// The outer request envelope, verified via JWS using the device's public key.
@@ -143,6 +132,8 @@ pub struct InnerResponse {
     pub expires_in: Option<iso8601_duration::Duration>,
     /// The result status of the operation
     pub status: Status,
+    /// Error message if the operation failed (serialized JSON)
+    pub error_message: Option<String>,
 }
 
 /// The outer response envelope, signed as a JWS by the server.
@@ -156,6 +147,54 @@ pub struct OuterResponse {
     pub session_id: Option<SessionId>,
     /// JWE-encrypted inner response payload (JWE compact serialization)
     pub inner_jwe: Option<TypedJwe<InnerResponse>>,
+    /// The result status of the operation
+    pub status: Status,
+    /// Error message if the operation failed (serialized JSON)
+    pub error_message: Option<String>,
+}
+
+impl InnerResponse {
+    pub fn ok(data: String, expires_in: Option<iso8601_duration::Duration>) -> Self {
+        Self {
+            version: 1,
+            data: Some(data),
+            expires_in,
+            status: Status::Ok,
+            error_message: None,
+        }
+    }
+
+    pub fn error(error_message: String) -> Self {
+        Self {
+            version: 1,
+            data: None,
+            expires_in: None,
+            status: Status::Error,
+            error_message: Some(error_message),
+        }
+    }
+}
+
+impl OuterResponse {
+    pub fn ok(inner_jwe: TypedJwe<InnerResponse>, session_id: Option<SessionId>) -> Self {
+        Self {
+            version: 1,
+            inner_jwe: Some(inner_jwe),
+            session_id,
+            status: Status::Ok,
+            error_message: None,
+        }
+    }
+
+    pub fn error(error_message: String) -> Self {
+        Self {
+            version: 1,
+            inner_jwe: None,
+            session_id: None,
+            status: Status::Error,
+            error_message: Some(error_message),
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -472,24 +511,6 @@ impl From<FromUtf8Error> for ServiceRequestError {
 pub enum WorkerRequestError {
     /// Failed to connect to a required service
     ConnectionError,
-    /// The client/device is not recognized
-    UnknownClient,
-    /// The outer JWS could not be verified
-    OuterJwsError,
-    /// Decryption of the inner JWE failed
-    DecryptionError,
-    /// Encryption of the response failed
-    EncryptionError,
-    /// The request context is not supported
-    UnsupportedContext,
-    /// The requested operation is not implemented
-    NotImplemented,
-    /// A service-level error occurred during operation execution
-    ServiceError(ServiceRequestError),
-    /// The device state is invalid or corrupted
-    InvalidState,
-    /// The session does not exist or has expired
-    UnknownSession,
-    /// The inner JWE is malformed
-    InnerJweError,
+    /// Failed to build a safe error response
+    ResponseBuildError,
 }
