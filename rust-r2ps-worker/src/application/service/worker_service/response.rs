@@ -1,7 +1,9 @@
 use crate::application::port::outgoing::jose_port;
 use crate::application::service::operations::OperationResult;
 use crate::application::service::worker_service::context::ResponseContext;
-use crate::application::service::worker_service::error::{ErrorVisibility, WorkerError};
+use crate::application::service::worker_service::error::{
+    ProblemDetail, UpstreamError, WorkerError,
+};
 use crate::application::session_key_spi_port::SessionKeySpiPort;
 use crate::domain::value_objects::r2ps::{InnerResponse, OuterResponse, Status};
 use crate::domain::{
@@ -9,6 +11,12 @@ use crate::domain::{
     WorkerResponse,
 };
 use std::sync::Arc;
+
+/// Carries a `WorkerError` with whatever context was available when the error occurred.
+pub struct ProcessError {
+    pub error: WorkerError,
+    pub context: Option<ResponseContext>,
+}
 
 /// Responsible for constructing and signing responses.
 /// This includes encrypting inner payloads (JWE) based on the operation's
@@ -38,7 +46,7 @@ impl ResponseBuilder {
         let inner_response = self.build_inner_response(&operation_result)?;
         let inner_jwe = self.encrypt_inner_response(&inner_response, context)?;
         let outer_response_jws =
-            self.build_outer_response_jws(inner_jwe, operation_result.session_id.clone())?;
+            self.build_outer_response_jws(inner_jwe, operation_result.session_id)?;
 
         let new_state_jws = self.encode_state_jws(operation_result.state)?;
 
@@ -54,11 +62,11 @@ impl ResponseBuilder {
     fn build_inner_response(
         &self,
         operation_result: &OperationResult,
-    ) -> Result<InnerResponse, WorkerError> {
+    ) -> Result<InnerResponse, UpstreamError> {
         let encoded_result = operation_result
             .data
             .serialize()
-            .map_err(|_| WorkerError::encode("serialize_inner_response_failed"))?;
+            .map_err(|_| UpstreamError::EncodeFailed("serialize_inner_response_failed"))?;
 
         let ttl = match operation_result.session_id.as_ref() {
             Some(id) => self.session_key_spi_port.get_remaining_ttl(id),
@@ -66,7 +74,7 @@ impl ResponseBuilder {
         };
 
         let serialized_data = String::from_utf8(encoded_result)
-            .map_err(|_| WorkerError::encode("serialize_inner_response_failed"))?;
+            .map_err(|_| UpstreamError::EncodeFailed("serialize_inner_response_failed"))?;
 
         Ok(operation_result.to_inner_response(serialized_data, ttl))
     }
@@ -75,76 +83,47 @@ impl ResponseBuilder {
         &self,
         inner_jwe: TypedJwe<InnerResponse>,
         session_id: Option<SessionId>,
-    ) -> Result<TypedJws<OuterResponse>, WorkerError> {
-        let outer_response = OuterResponse {
-            version: 1,
-            inner_jwe: Some(inner_jwe),
-            session_id,
-            status: Status::Ok,
-            error_message: None,
-        };
-
-        outer_response.sign(self.jose.as_ref())
+    ) -> Result<TypedJws<OuterResponse>, UpstreamError> {
+        OuterResponse::ok(inner_jwe, session_id).sign(self.jose.as_ref())
     }
 
     fn encode_state_jws(
         &self,
         state: Option<DeviceHsmState>,
-    ) -> Result<Option<TypedJws<DeviceHsmState>>, WorkerError> {
+    ) -> Result<Option<TypedJws<DeviceHsmState>>, UpstreamError> {
         state
             .map(|state| {
                 state
                     .sign(self.jose.as_ref())
-                    .map_err(|_| WorkerError::encode("state_sign_failed"))
+                    .map_err(|_| UpstreamError::EncodeFailed("state_sign_failed"))
             })
             .transpose()
     }
 
-    pub fn build_dispatch_error_response(
+    pub fn build_error_response(
         &self,
         request_id: &str,
-        context: &ResponseContext,
-        err: WorkerError,
-        session_id: Option<SessionId>,
+        process_err: ProcessError,
     ) -> Result<WorkerResponse, WorkerRequestError> {
-        let problem_json = err.to_problem_details_json(request_id);
+        let ProcessError { error, context } = process_err;
+        let problem_json = error.to_problem_details_json(request_id);
 
-        match err.visibility {
-            ErrorVisibility::Worker => {
-                Ok(self.build_worker_only_error_response(request_id, problem_json))
+        match error {
+            WorkerError::Upstream(_) => {
+                Ok(self.build_upstream_only_error_response(request_id, problem_json))
             }
-            ErrorVisibility::Outer => {
-                let outer_response = OuterResponse {
-                    version: 1,
-                    inner_jwe: None,
-                    session_id: None,
-                    status: Status::Error,
-                    error_message: Some(problem_json.clone()),
-                };
-                self.build_outer_error_worker_response(request_id, outer_response)
+            WorkerError::Outer(_) => {
+                self.build_outer_error_worker_response(request_id, problem_json)
             }
-            ErrorVisibility::Inner => {
-                let inner_response = InnerResponse {
-                    version: 1,
-                    data: None,
-                    expires_in: None,
-                    status: Status::Error,
-                    error_message: Some(problem_json.clone()),
-                };
-
-                let inner_jwe_result = self.encrypt_inner_response(&inner_response, context);
-
-                match inner_jwe_result {
-                    Ok(inner_jwe) => {
-                        let outer_response = OuterResponse {
-                            version: 1,
-                            inner_jwe: Some(inner_jwe),
-                            session_id,
-                            status: Status::Ok,
-                            error_message: None,
-                        };
-                        self.build_outer_error_worker_response(request_id, outer_response)
-                    }
+            WorkerError::Inner(_) => {
+                let context = context
+                    .as_ref()
+                    .ok_or(WorkerRequestError::ResponseBuildError)?;
+                match self.encrypt_inner_response(&InnerResponse::error(problem_json), context) {
+                    Ok(inner_jwe) => self.sign_and_wrap_outer_response(
+                        request_id,
+                        OuterResponse::ok(inner_jwe, None),
+                    ),
                     Err(_) => Err(WorkerRequestError::ResponseBuildError),
                 }
             }
@@ -154,21 +133,12 @@ impl ResponseBuilder {
     fn build_outer_error_worker_response(
         &self,
         request_id: &str,
-        outer_response: OuterResponse,
+        problem_json: String,
     ) -> Result<WorkerResponse, WorkerRequestError> {
-        match outer_response.sign(self.jose.as_ref()) {
-            Ok(outer_response_jws) => Ok(WorkerResponse {
-                request_id: request_id.to_string(),
-                state_jws: None,
-                outer_response_jws: Some(outer_response_jws),
-                status: Status::Ok,
-                error_message: None,
-            }),
-            Err(_) => Err(WorkerRequestError::ResponseBuildError),
-        }
+        self.sign_and_wrap_outer_response(request_id, OuterResponse::error(problem_json))
     }
 
-    pub fn build_worker_only_error_response(
+    pub fn build_upstream_only_error_response(
         &self,
         request_id: &str,
         problem_json: String,
@@ -186,25 +156,38 @@ impl ResponseBuilder {
         &self,
         inner_response: &InnerResponse,
         context: &ResponseContext,
-    ) -> Result<TypedJwe<InnerResponse>, WorkerError> {
+    ) -> Result<TypedJwe<InnerResponse>, UpstreamError> {
         let enc_option = context.request_type.encrypt_option();
         let enc_key = match enc_option {
             EncryptOption::Session => {
                 let session_key = context
                     .session_key
                     .as_ref()
-                    .ok_or_else(|| WorkerError::encode("unknown_session"))?;
+                    .ok_or(UpstreamError::EncodeFailed("unknown_session"))?;
                 jose_port::JweEncryptionKey::Session(session_key)
-                // TypedJwe::encrypt(inner_response, session_key)
-                //     .map_err(|_| WorkerError::encode("inner_response_encrypt_failed"))
             }
             EncryptOption::Device => {
                 jose_port::JweEncryptionKey::Device(&context.device_public_key)
-                // TypedJwe::encrypt_with_jwk(inner_response, &context.device_public_key)
-                //     .map_err(|_| WorkerError::encode("inner_response_encrypt_failed"))
             }
         };
 
         inner_response.encrypt(self.jose.as_ref(), enc_key)
+    }
+
+    fn sign_and_wrap_outer_response(
+        &self,
+        request_id: &str,
+        outer_response: OuterResponse,
+    ) -> Result<WorkerResponse, WorkerRequestError> {
+        match outer_response.sign(self.jose.as_ref()) {
+            Ok(outer_response_jws) => Ok(WorkerResponse {
+                request_id: request_id.to_string(),
+                state_jws: None,
+                outer_response_jws: Some(outer_response_jws),
+                status: Status::Ok,
+                error_message: None,
+            }),
+            Err(_) => Err(WorkerRequestError::ResponseBuildError),
+        }
     }
 }

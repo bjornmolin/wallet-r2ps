@@ -1,19 +1,20 @@
 #[cfg(test)]
 mod tests {
-    use crate::application::OpaqueConfig;
     use crate::application::hsm_spi_port::HsmSpiPort;
     use crate::application::jose_port::{JosePort, JweDecryptionKey};
     use crate::application::pake_port::{PakeError, PakePort, RegistrationResult};
     use crate::application::service::operations::OperationResult;
+    use crate::application::service::worker_service::WorkerService;
     use crate::application::service::worker_service::context::ResponseContext;
-    use crate::application::service::worker_service::error::ErrorVisibility;
-    use crate::application::service::worker_service::error::WorkerError;
-    use crate::application::service::worker_service::response::ResponseBuilder;
-    use crate::application::service::worker_service::{ProcessError, WorkerService};
+    use crate::application::service::worker_service::error::{
+        OuterError, UpstreamError, WorkerError,
+    };
+    use crate::application::service::worker_service::response::{ProcessError, ResponseBuilder};
     use crate::application::session_key_spi_port::{
         ClientRepositoryError, SessionKey, SessionKeySpiPort,
     };
     use crate::application::{WorkerPorts, WorkerResponseError, WorkerResponseSpiPort};
+    use crate::domain::ServiceRequestError;
     use crate::domain::value_objects::r2ps::{InnerResponse, OperationId, Status};
     use crate::domain::{Curve, EcPublicJwk, HsmKey, InnerResponseData, SessionId, WorkerResponse};
     use crate::infrastructure::adapters::outgoing::jose_adapter::JoseAdapter;
@@ -128,10 +129,20 @@ mod tests {
         (jose, verifier)
     }
 
-    fn setup_builder() -> (ResponseBuilder, EcdsaJwsVerifier) {
+    struct BuilderFixture {
+        builder: ResponseBuilder,
+        jose: Arc<dyn JosePort>,
+        verifier: EcdsaJwsVerifier,
+    }
+
+    fn setup_builder() -> BuilderFixture {
         let (jose, verifier) = setup_crypto();
-        let builder = ResponseBuilder::new(jose, Arc::new(MockSessionKeySpi));
-        (builder, verifier)
+        let builder = ResponseBuilder::new(jose.clone(), Arc::new(MockSessionKeySpi));
+        BuilderFixture {
+            builder,
+            jose,
+            verifier,
+        }
     }
 
     fn setup_worker_service() -> (
@@ -151,12 +162,6 @@ mod tests {
             hsm: Arc::new(MockHsmSpi),
             worker_response: worker_response_spi.clone(),
             pake: Arc::new(MockPake),
-        };
-
-        let _opaque_config = OpaqueConfig {
-            opaque_server_setup: None,
-            opaque_context: "test-context".to_string(),
-            opaque_server_identifier: "test-server-id".to_string(),
         };
 
         let worker_service = WorkerService::new(jose.clone(), ports);
@@ -192,7 +197,7 @@ mod tests {
 
         #[test]
         fn test_encode_success_session_encryption() {
-            let (builder, _) = setup_builder();
+            let BuilderFixture { builder, .. } = setup_builder();
             let request_id = "someRequest";
             let context = mock_context(request_id, OperationId::HsmListKeys); // HsmListKeys uses Session encryption
 
@@ -212,7 +217,7 @@ mod tests {
 
         #[test]
         fn test_encode_success_device_encryption() {
-            let (builder, _) = setup_builder();
+            let BuilderFixture { builder, .. } = setup_builder();
             let request_id = "someRequest";
             let context = mock_context(request_id, OperationId::AuthenticateStart); // AuthenticateStart uses Device encryption
 
@@ -237,12 +242,14 @@ mod tests {
 
         #[test]
         fn test_build_worker_only_error_response() {
-            let (service, _, _, _) = setup_worker_service();
+            let BuilderFixture { builder, .. } = setup_builder();
             let request_id = "someRequest";
-            let err = WorkerError::decode("some decode error");
-            let process_err = ProcessError::WithoutContext(err);
+            let process_err = ProcessError {
+                error: WorkerError::Upstream(UpstreamError::InvalidStateJws),
+                context: None,
+            };
 
-            let response = service
+            let response = builder
                 .build_error_response(request_id, process_err)
                 .expect("worker-only error response should build");
 
@@ -255,16 +262,15 @@ mod tests {
 
         #[test]
         fn test_build_dispatch_error_worker_visibility() {
-            let (service, _, _, _) = setup_worker_service();
+            let BuilderFixture { builder, .. } = setup_builder();
             let request_id = "someRequest";
             let context = mock_context(request_id, OperationId::HsmGenerateKey);
-            let err = WorkerError {
-                visibility: ErrorVisibility::Worker,
-                reason: "some dispatch error".to_string(),
+            let process_err = ProcessError {
+                error: WorkerError::Upstream(UpstreamError::UnknownDevice),
+                context: Some(context),
             };
-            let process_err = ProcessError::WithContext(err, Box::new(context), None);
 
-            let response = service
+            let response = builder
                 .build_error_response(request_id, process_err)
                 .expect("worker-only response should build");
 
@@ -276,22 +282,22 @@ mod tests {
                 response
                     .error_message
                     .as_ref()
-                    .is_some_and(|msg| msg.contains("some dispatch error"))
+                    .is_some_and(|msg| msg.contains("UnknownDevice"))
             );
         }
 
         #[test]
         fn test_build_dispatch_error_outer_visibility() {
-            let (service, _, _, verifier) = setup_worker_service();
+            let BuilderFixture {
+                builder, verifier, ..
+            } = setup_builder();
             let request_id = "someRequest";
-            let context = mock_context(request_id, OperationId::HsmGenerateKey);
-            let err = WorkerError {
-                visibility: ErrorVisibility::Outer,
-                reason: "some dispatch error".to_string(),
+            let process_err = ProcessError {
+                error: WorkerError::Outer(OuterError::UnsupportedContext),
+                context: None,
             };
-            let process_err = ProcessError::WithContext(err, Box::new(context), None);
 
-            let response = service
+            let response = builder
                 .build_error_response(request_id, process_err)
                 .expect("outer response should build");
 
@@ -315,22 +321,25 @@ mod tests {
             assert!(
                 outer_response
                     .error_message
-                    .is_some_and(|msg| msg.contains("some dispatch error"))
+                    .is_some_and(|msg| msg.contains("UnsupportedContext"))
             );
         }
 
         #[test]
         fn test_build_dispatch_error_inner_visibility() {
-            let (service, _, jose, verifier) = setup_worker_service();
+            let BuilderFixture {
+                builder,
+                jose,
+                verifier,
+            } = setup_builder();
             let request_id = "someRequest";
             let context = mock_context(request_id, OperationId::HsmGenerateKey);
-            let err = WorkerError {
-                visibility: ErrorVisibility::Inner,
-                reason: "some dispatch error".to_string(),
+            let process_err = ProcessError {
+                error: WorkerError::Inner(ServiceRequestError::Unknown),
+                context: Some(context.clone()),
             };
-            let process_err = ProcessError::WithContext(err, Box::new(context.clone()), None);
 
-            let response = service
+            let response = builder
                 .build_error_response(request_id, process_err)
                 .expect("inner response should build");
 
@@ -371,7 +380,7 @@ mod tests {
             assert!(
                 inner_response
                     .error_message
-                    .is_some_and(|msg| msg.contains("some dispatch error"))
+                    .is_some_and(|msg| msg.contains("Unknown"))
             );
         }
     }
@@ -410,7 +419,7 @@ mod tests {
             assert!(response.outer_response_jws.is_none());
 
             assert!(response.error_message.as_ref().is_some_and(|msg| {
-                msg.contains("someRequest") && msg.contains("invalid_state")
+                msg.contains("someRequest") && msg.contains("InvalidStateJws")
             }));
         }
     }
