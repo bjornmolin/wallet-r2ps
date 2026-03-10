@@ -7,19 +7,19 @@ pub mod response;
 mod tests;
 
 pub use context::{ResponseContext, WorkerInput};
-pub use error::WorkerError;
+pub use error::{OuterError, ProblemDetail, UpstreamError, WorkerError};
 
 use crate::application::service::operations::OperationDispatcher;
 use crate::application::{
     WorkerPorts, WorkerRequestId, WorkerRequestUseCase, WorkerResponseSpiPort, jose_port,
 };
-use crate::domain::{HsmWorkerRequest, SessionId, WorkerRequestError, WorkerResponse};
+use crate::domain::{HsmWorkerRequest, WorkerRequestError, WorkerResponse};
 use std::sync::Arc;
 use std::time::Instant;
 use tracing::{error, info};
 
 use decode::RequestDecoder;
-use response::ResponseBuilder;
+use response::{ProcessError, ResponseBuilder};
 
 /// Orchestrates the processing of requests from Kafka.
 pub struct WorkerService {
@@ -62,13 +62,12 @@ impl WorkerRequestUseCase for WorkerService {
 
         let response = match self.process_request(hsm_worker_request) {
             Ok(res) => res,
-            Err(err) => {
-                let worker_err = err.worker_error();
-                error!(
-                    "Request {} failed with reason: {:?} (visibility {:?})",
-                    request_id, worker_err.reason, worker_err.visibility
-                );
-                match self.build_error_response(&request_id, err) {
+            Err(process_err) => {
+                error!("Request {} failed: {:?}", request_id, process_err.error);
+                match self
+                    .response_builder
+                    .build_error_response(&request_id, process_err)
+                {
                     Ok(response) => response,
                     Err(build_err) => {
                         error!(
@@ -95,25 +94,6 @@ impl WorkerRequestUseCase for WorkerService {
     }
 }
 
-/// Represents an error encountered at a specific stage of the request pipeline.
-#[derive(Debug)]
-enum ProcessError {
-    /// Error occurring before context is established (e.g. Decode)
-    WithoutContext(WorkerError),
-    /// Error occurring after context is established (e.g. Dispatch or Encode)
-    WithContext(WorkerError, Box<ResponseContext>, Option<SessionId>),
-}
-
-impl ProcessError {
-    /// Returns the underlying `WorkerError`
-    fn worker_error(&self) -> &WorkerError {
-        match self {
-            ProcessError::WithoutContext(err) => err,
-            ProcessError::WithContext(err, _, _) => err,
-        }
-    }
-}
-
 impl WorkerService {
     /// The core execution pipeline: Decode -> Dispatch -> Encode.
     fn process_request(&self, request: HsmWorkerRequest) -> Result<WorkerResponse, ProcessError> {
@@ -124,48 +104,26 @@ impl WorkerService {
         } = self
             .request_decoder
             .decode_request(request)
-            .map_err(ProcessError::WithoutContext)?;
-
-        let session_id = operation_context.session_id.clone();
+            .map_err(|error| ProcessError {
+                error,
+                context: None,
+            })?;
 
         // Dispatch
         let operation_result = self
             .operation_dispatcher
             .dispatch(operation_context)
-            .map_err(|err| {
-                ProcessError::WithContext(
-                    WorkerError::dispatch(err),
-                    Box::new(response_context.clone()),
-                    session_id.clone(),
-                )
+            .map_err(|err| ProcessError {
+                error: WorkerError::Inner(err),
+                context: Some(response_context.clone()),
             })?;
 
         // Encode
         self.response_builder
             .encode_response(operation_result, &response_context)
-            .map_err(|err| ProcessError::WithContext(err, Box::new(response_context), session_id))
-    }
-
-    fn build_error_response(
-        &self,
-        request_id: &str,
-        err: ProcessError,
-    ) -> Result<WorkerResponse, WorkerRequestError> {
-        match err {
-            ProcessError::WithoutContext(worker_err) => {
-                let problem_json = worker_err.to_problem_details_json(request_id);
-                Ok(self
-                    .response_builder
-                    .build_worker_only_error_response(request_id, problem_json))
-            }
-            ProcessError::WithContext(worker_err, context, session_id) => {
-                self.response_builder.build_dispatch_error_response(
-                    request_id,
-                    context.as_ref(),
-                    worker_err,
-                    session_id,
-                )
-            }
-        }
+            .map_err(|error| ProcessError {
+                error,
+                context: Some(response_context),
+            })
     }
 }

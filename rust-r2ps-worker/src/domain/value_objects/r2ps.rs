@@ -153,6 +153,50 @@ pub struct OuterResponse {
     pub error_message: Option<String>,
 }
 
+impl InnerResponse {
+    pub fn ok(data: String, expires_in: Option<iso8601_duration::Duration>) -> Self {
+        Self {
+            version: 1,
+            data: Some(data),
+            expires_in,
+            status: Status::Ok,
+            error_message: None,
+        }
+    }
+
+    pub fn error(error_message: String) -> Self {
+        Self {
+            version: 1,
+            data: None,
+            expires_in: None,
+            status: Status::Error,
+            error_message: Some(error_message),
+        }
+    }
+}
+
+impl OuterResponse {
+    pub fn ok(inner_jwe: TypedJwe<InnerResponse>, session_id: Option<SessionId>) -> Self {
+        Self {
+            version: 1,
+            inner_jwe: Some(inner_jwe),
+            session_id,
+            status: Status::Ok,
+            error_message: None,
+        }
+    }
+
+    pub fn error(error_message: String) -> Self {
+        Self {
+            version: 1,
+            inner_jwe: None,
+            session_id: None,
+            status: Status::Error,
+            error_message: Some(error_message),
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct InnerResponseData {
     data: serde_json::Value,

@@ -1,7 +1,7 @@
 use crate::application::jose_port;
 use crate::application::service::operations::OperationContext;
 use crate::application::service::worker_service::context::{ResponseContext, WorkerInput};
-use crate::application::service::worker_service::error::WorkerError;
+use crate::application::service::worker_service::error::{OuterError, UpstreamError, WorkerError};
 use crate::application::session_key_spi_port::SessionKeySpiPort;
 use crate::domain::value_objects::r2ps::OuterRequest;
 use crate::domain::{DeviceHsmState, EcPublicJwk, HsmWorkerRequest};
@@ -80,9 +80,9 @@ impl RequestDecoder {
         })
     }
 
-    fn decode_state(&self, state_jws: &str) -> Result<DeviceHsmState, WorkerError> {
+    fn decode_state(&self, state_jws: &str) -> Result<DeviceHsmState, UpstreamError> {
         DeviceHsmState::from_jws(state_jws, self.jose.as_ref())
-            .map_err(|_| WorkerError::decode("invalid_state"))
+            .map_err(|_| UpstreamError::InvalidStateJws)
     }
 
     fn decode_outer_request(
@@ -93,12 +93,12 @@ impl RequestDecoder {
         let device_kid = self
             .jose
             .peek_kid(outer_request_jws)
-            .map_err(|_| WorkerError::decode("outer_jws_invalid"))?
-            .ok_or_else(|| WorkerError::decode("outer_jws_missing_kid"))?;
+            .map_err(|_| UpstreamError::OuterJwsInvalid)?
+            .ok_or(UpstreamError::OuterJwsMissingKid)?;
 
         let device_public_key = state
             .find_device_key(&device_kid)
-            .ok_or_else(|| WorkerError::decode("outer_jws_unknown_device"))?
+            .ok_or(UpstreamError::UnknownDevice)?
             .public_key
             .clone();
 
@@ -106,7 +106,7 @@ impl RequestDecoder {
             OuterRequest::from_jws(outer_request_jws, self.jose.as_ref(), &device_public_key)?;
 
         if outer_request.context != "hsm" {
-            return Err(WorkerError::decode("unsupported_context"));
+            return Err(OuterError::UnsupportedContext.into());
         }
 
         Ok((device_kid, device_public_key, outer_request))
