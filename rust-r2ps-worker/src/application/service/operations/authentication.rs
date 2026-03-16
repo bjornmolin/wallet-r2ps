@@ -3,7 +3,7 @@ use crate::application::port::outgoing::pake_port;
 use crate::application::session_key_spi_port::{SessionKey, SessionKeySpiPort};
 use crate::domain;
 use std::sync::Arc;
-use tracing::warn;
+use tracing::{debug, warn};
 
 fn pake_err_to_service_err(e: pake_port::PakeError) -> domain::ServiceRequestError {
     match e {
@@ -149,7 +149,6 @@ impl ServiceOperation for RegisterStartOperation {
     ) -> Result<OperationResult, domain::ServiceRequestError> {
         let pake_request = domain::PakeRequest::from_inner_request(context.inner_request)?;
 
-        // TODO: require authorization code (currently optional)
         if let Some(provided_code) = &pake_request.authorization {
             let device_key = context
                 .state
@@ -161,8 +160,7 @@ impl ServiceOperation for RegisterStartOperation {
             }
         } else {
             warn!("missing authorization code in register start");
-            // TODO: Enable this
-            // return Err(domain::ServiceRequestError::InvalidAuthorizationCode);
+            return Err(domain::ServiceRequestError::InvalidAuthorizationCode);
         }
 
         let response_bytes = self
@@ -201,7 +199,6 @@ impl ServiceOperation for RegisterFinishOperation {
     ) -> Result<OperationResult, domain::ServiceRequestError> {
         let pake_payload = domain::PakeRequest::from_inner_request(context.inner_request)?;
 
-        // TODO: require authorization code (currently optional)
         if let Some(provided_code) = &pake_payload.authorization {
             let device_key = context
                 .state
@@ -213,8 +210,7 @@ impl ServiceOperation for RegisterFinishOperation {
             }
         } else {
             warn!("missing authorization code in register finish");
-            // TODO: Enable this
-            // return Err(domain::ServiceRequestError::InvalidAuthorizationCode);
+            return Err(domain::ServiceRequestError::InvalidAuthorizationCode);
         }
 
         let pake_port::RegistrationResult {
@@ -232,11 +228,128 @@ impl ServiceOperation for RegisterFinishOperation {
         };
 
         let mut new_state = context.state;
-        new_state.add_password_file(
+        new_state.set_password_file(
             &context.device_kid,
             password_file_entry,
             pake_payload.authorization.as_deref(),
         )?;
+
+        let payload = domain::PakeResponse {
+            task: None,
+            data: None,
+        };
+
+        Ok(OperationResult {
+            state: Some(new_state),
+            data: domain::InnerResponseData::new(payload)?,
+            session_id: context.session_id,
+        })
+    }
+}
+
+// PinChangeStart Operation
+// Initiates PIN change by starting a new OPAQUE registration within an authenticated session.
+// Replaces the existing password file with a new one (the password file is stored as a list
+// to support future enhancements).
+// Future improvement: Support parallel authentication where both PINs remain valid until
+// the next login. This would require the server to return challenges for both password files
+// during AuthenticateStart (since the server can't determine which PIN the client has), then
+// verify against all candidates during AuthenticateFinish. The system would self-heal by
+// discarding unused credentials after successful verification, preventing user lockout during
+// network failures.
+pub struct PinChangeStartOperation {
+    pake_port: Arc<dyn pake_port::PakePort>,
+}
+
+impl PinChangeStartOperation {
+    pub fn new(pake_port: Arc<dyn pake_port::PakePort>) -> Self {
+        Self { pake_port }
+    }
+}
+
+impl ServiceOperation for PinChangeStartOperation {
+    fn execute(
+        &self,
+        context: OperationContext,
+    ) -> Result<OperationResult, domain::ServiceRequestError> {
+        let pake_request = domain::PakeRequest::from_inner_request(context.inner_request)?;
+
+        if context.session_id.is_none() {
+            return Err(domain::ServiceRequestError::UnknownSession);
+        }
+
+        let response_bytes = self
+            .pake_port
+            .registration_start(pake_request.data.as_ref(), &context.device_kid)
+            .map_err(pake_err_to_service_err)?;
+
+        let payload = domain::PakeResponse {
+            task: None,
+            data: Some(domain::PakePayloadVector::new(response_bytes)),
+        };
+
+        Ok(OperationResult {
+            state: None,
+            data: domain::InnerResponseData::new(payload)?,
+            session_id: context.session_id,
+        })
+    }
+}
+
+// PinChangeFinish Operation
+pub struct PinChangeFinishOperation {
+    pake_port: Arc<dyn pake_port::PakePort>,
+    session_key_spi_port: Arc<dyn SessionKeySpiPort + Send + Sync>,
+}
+
+impl PinChangeFinishOperation {
+    pub fn new(
+        pake_port: Arc<dyn pake_port::PakePort>,
+        session_key_spi_port: Arc<dyn SessionKeySpiPort + Send + Sync>,
+    ) -> Self {
+        Self {
+            pake_port,
+            session_key_spi_port,
+        }
+    }
+}
+
+impl ServiceOperation for PinChangeFinishOperation {
+    fn execute(
+        &self,
+        context: OperationContext,
+    ) -> Result<OperationResult, domain::ServiceRequestError> {
+        let pake_payload = domain::PakeRequest::from_inner_request(context.inner_request)?;
+
+        if context.session_id.is_none() {
+            return Err(domain::ServiceRequestError::UnknownSession);
+        }
+
+        let pake_port::RegistrationResult {
+            password_file,
+            server_identifier,
+        } = self
+            .pake_port
+            .registration_finish(pake_payload.data.as_ref())
+            .map_err(pake_err_to_service_err)?;
+
+        let password_file_entry = domain::PasswordFileEntry {
+            password_file,
+            server_identifier,
+            created_at: chrono::Utc::now().to_rfc3339(),
+        };
+
+        let mut new_state = context.state;
+        new_state.set_password_file(&context.device_kid, password_file_entry, None)?;
+
+        self.session_key_spi_port
+            .end_session(context.session_id.as_ref().unwrap())
+            .map_err(|_| domain::ServiceRequestError::InternalServerError)?;
+
+        debug!(
+            "Pin change completed and session ended: {:?}",
+            context.session_id.as_ref().unwrap()
+        );
 
         let payload = domain::PakeResponse {
             task: None,

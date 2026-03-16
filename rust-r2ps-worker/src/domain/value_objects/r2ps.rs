@@ -228,8 +228,10 @@ pub enum OperationId {
     RegisterStart,
     /// Complete OPAQUE registration (PAKE finalize phase)
     RegisterFinish,
-    /// Change the device PIN (re-register OPAQUE credential)
-    PinChange,
+    /// Begin changing the device PIN (PAKE evaluate phase, session required)
+    ChangePinStart,
+    /// Complete changing the device PIN (PAKE finalize phase, session required)
+    ChangePinFinish,
     /// Sign data using an HSM-managed key
     HsmSign,
     /// Perform ECDH key agreement using an HSM-managed key
@@ -281,13 +283,14 @@ impl OperationId {
             OperationId::AuthenticateFinish => EncryptOption::Device,
             OperationId::RegisterStart => EncryptOption::Device,
             OperationId::RegisterFinish => EncryptOption::Device,
-            OperationId::PinChange => EncryptOption::Session,
+            OperationId::ChangePinStart => EncryptOption::Session,
+            OperationId::ChangePinFinish => EncryptOption::Session,
             OperationId::HsmSign => EncryptOption::Session,
             OperationId::HsmEcdh => EncryptOption::Session,
             OperationId::HsmGenerateKey => EncryptOption::Session,
             OperationId::HsmDeleteKey => EncryptOption::Session,
             OperationId::HsmListKeys => EncryptOption::Session,
-            OperationId::EndSession => EncryptOption::Device, // TODO: Why is this Device?
+            OperationId::EndSession => EncryptOption::Session,
             OperationId::Store => EncryptOption::Session,
             OperationId::Retrieve => EncryptOption::Session,
             OperationId::Log => EncryptOption::Session,

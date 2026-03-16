@@ -11,8 +11,8 @@ use std::time::Instant;
 use tracing::debug;
 
 use authentication::{
-    AuthenticateFinishOperation, AuthenticateStartOperation, RegisterFinishOperation,
-    RegisterStartOperation,
+    AuthenticateFinishOperation, AuthenticateStartOperation, PinChangeFinishOperation,
+    PinChangeStartOperation, RegisterFinishOperation, RegisterStartOperation,
 };
 use hsm::{HsmDeleteKeyOperation, HsmGenerateKeyOperation, HsmListKeysOperation, HsmSignOperation};
 use session::SessionEndOperation;
@@ -57,6 +57,8 @@ pub struct OperationDispatcher {
     authenticate_finish_op: AuthenticateFinishOperation,
     register_start_op: RegisterStartOperation,
     register_finish_op: RegisterFinishOperation,
+    pin_change_start_op: PinChangeStartOperation,
+    pin_change_finish_op: PinChangeFinishOperation,
     hsm_ecdsa_op: HsmSignOperation,
     hsm_keygen_op: HsmGenerateKeyOperation,
     hsm_delete_key_op: HsmDeleteKeyOperation,
@@ -78,7 +80,12 @@ impl OperationDispatcher {
                 session_key_spi_port.clone(),
             ),
             register_start_op: RegisterStartOperation::new(pake_port.clone()),
-            register_finish_op: RegisterFinishOperation::new(pake_port),
+            register_finish_op: RegisterFinishOperation::new(pake_port.clone()),
+            pin_change_start_op: PinChangeStartOperation::new(pake_port.clone()),
+            pin_change_finish_op: PinChangeFinishOperation::new(
+                pake_port,
+                session_key_spi_port.clone(),
+            ),
             hsm_ecdsa_op: HsmSignOperation::new(hsm_spi_port.clone()),
             hsm_keygen_op: HsmGenerateKeyOperation::new(hsm_spi_port.clone()),
             hsm_delete_key_op: HsmDeleteKeyOperation,
@@ -102,12 +109,13 @@ impl OperationDispatcher {
             OperationId::AuthenticateFinish => self.authenticate_finish_op.execute(context),
             OperationId::RegisterStart => self.register_start_op.execute(context),
             OperationId::RegisterFinish => self.register_finish_op.execute(context),
+            OperationId::ChangePinStart => self.pin_change_start_op.execute(context),
+            OperationId::ChangePinFinish => self.pin_change_finish_op.execute(context),
             OperationId::HsmSign => self.hsm_ecdsa_op.execute(context),
             OperationId::HsmGenerateKey => self.hsm_keygen_op.execute(context),
             OperationId::HsmDeleteKey => self.hsm_delete_key_op.execute(context),
             OperationId::HsmListKeys => self.hsm_list_keys_op.execute(context),
             OperationId::EndSession => self.session_end_op.execute(context),
-            OperationId::PinChange => Err(ServiceRequestError::Unknown),
             OperationId::HsmEcdh => Err(ServiceRequestError::Unknown),
             OperationId::Store => Err(ServiceRequestError::Unknown),
             OperationId::Retrieve => Err(ServiceRequestError::Unknown),
