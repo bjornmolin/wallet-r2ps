@@ -1,12 +1,14 @@
+use crate::application::port::outgoing::session_state_spi_port::SessionKey;
 use crate::application::service::operations::OperationContext;
-use crate::application::session_key_spi_port::SessionKey;
 use crate::domain::{EcPublicJwk, OperationId};
+use std::time::Duration;
 
 #[derive(Debug, Clone)]
 pub struct ResponseContext {
     pub request_id: String,
     pub request_type: OperationId,
     pub session_key: Option<SessionKey>,
+    pub ttl: Option<Duration>,
     pub device_public_key: EcPublicJwk,
 }
 

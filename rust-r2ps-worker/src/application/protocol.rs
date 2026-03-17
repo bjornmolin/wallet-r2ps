@@ -1,5 +1,5 @@
 use crate::application::port::outgoing::jose_port;
-use crate::application::session_key_spi_port::SessionKey;
+use crate::application::port::outgoing::session_state_spi_port::SessionKey;
 use crate::application::{OuterError, UpstreamError};
 use crate::domain::{
     EcPublicJwk, EncryptOption, InnerRequest, InnerResponse, OuterRequest, OuterResponse, TypedJwe,

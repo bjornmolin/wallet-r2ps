@@ -311,9 +311,6 @@ define_byte_vector!(PakePayloadVector);
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(ToSchema))]
 pub struct PakeResponse {
-    /// The session task recognized by the server bound to this PAKE session
-    pub task: Option<String>,
-
     /// PAKE response data (base64-encoded) as defined by the PAKE protocol state
     #[cfg_attr(feature = "openapi", schema(value_type = Option<String>, format = "byte"))]
     pub data: Option<PakePayloadVector>,
@@ -422,8 +419,8 @@ pub struct PakeRequest {
     /// Optional authorization data required for initial PIN registrations or PIN resets
     pub authorization: Option<String>,
 
-    /// The session task identifier
-    pub task: Option<String>,
+    /// The session purpose identifier
+    pub purpose: Option<String>,
 
     /// PAKE protocol message data (base64-encoded)
     #[serde(rename = "data")]
@@ -490,6 +487,8 @@ pub enum ServiceRequestError {
     HsmKeyNotFound,
     /// The request context is not supported
     UnsupportedContext,
+    /// The operation is not permitted in the current session state
+    InvalidOperation,
     /// An internal server error occurred
     InternalServerError,
     InvalidAuthorizationCode,

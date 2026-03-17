@@ -4,11 +4,13 @@ pub mod session;
 
 use crate::application::hsm_spi_port::HsmSpiPort;
 use crate::application::port::outgoing::pake_port::PakePort;
-use crate::application::session_key_spi_port::SessionKeySpiPort;
+use crate::application::port::outgoing::session_state_spi_port::SessionState;
 use crate::domain::{OperationId, ServiceRequestError, SessionId};
 use std::sync::Arc;
 use std::time::Instant;
 use tracing::debug;
+
+pub use crate::application::port::outgoing::session_state_spi_port::SessionTransition;
 
 use authentication::{
     AuthenticateFinishOperation, AuthenticateStartOperation, PinChangeFinishOperation,
@@ -24,13 +26,15 @@ pub struct OperationContext {
     pub outer_request: crate::domain::value_objects::r2ps::OuterRequest,
     pub inner_request: crate::domain::value_objects::r2ps::InnerRequest,
     pub session_id: Option<SessionId>,
-    pub device_kid: String, // kid from OuterRequest JWS header
+    pub device_kid: String,
+    pub session_state: Option<SessionState>,
 }
 
 pub struct OperationResult {
     pub state: Option<crate::domain::DeviceHsmState>,
     pub data: crate::domain::InnerResponseData,
     pub session_id: Option<SessionId>,
+    pub session_transition: Option<SessionTransition>,
 }
 
 impl OperationResult {
@@ -70,27 +74,20 @@ impl OperationDispatcher {
     /// Creates a new OperationDispatcher with all operation handlers initialized
     pub fn from_dependencies(
         pake_port: Arc<dyn PakePort>,
-        session_key_spi_port: Arc<dyn SessionKeySpiPort + Send + Sync>,
         hsm_spi_port: Arc<dyn HsmSpiPort + Send + Sync>,
     ) -> Self {
         Self {
             authenticate_start_op: AuthenticateStartOperation::new(pake_port.clone()),
-            authenticate_finish_op: AuthenticateFinishOperation::new(
-                pake_port.clone(),
-                session_key_spi_port.clone(),
-            ),
+            authenticate_finish_op: AuthenticateFinishOperation::new(pake_port.clone()),
             register_start_op: RegisterStartOperation::new(pake_port.clone()),
             register_finish_op: RegisterFinishOperation::new(pake_port.clone()),
             pin_change_start_op: PinChangeStartOperation::new(pake_port.clone()),
-            pin_change_finish_op: PinChangeFinishOperation::new(
-                pake_port,
-                session_key_spi_port.clone(),
-            ),
+            pin_change_finish_op: PinChangeFinishOperation::new(pake_port),
             hsm_ecdsa_op: HsmSignOperation::new(hsm_spi_port.clone()),
             hsm_keygen_op: HsmGenerateKeyOperation::new(hsm_spi_port.clone()),
             hsm_delete_key_op: HsmDeleteKeyOperation,
             hsm_list_keys_op: HsmListKeysOperation,
-            session_end_op: SessionEndOperation::new(session_key_spi_port.clone()),
+            session_end_op: SessionEndOperation,
         }
     }
 

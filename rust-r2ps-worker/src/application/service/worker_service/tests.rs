@@ -1,17 +1,17 @@
 use crate::application::hsm_spi_port::HsmSpiPort;
 use crate::application::jose_port::{JosePort, JweDecryptionKey};
 use crate::application::pake_port::{PakeError, PakePort, RegistrationResult};
+use crate::application::port::outgoing::session_state_spi_port::{
+    SessionKey, SessionState, SessionStateError, SessionStateSpiPort, SessionTransition,
+};
 use crate::application::service::operations::OperationResult;
 use crate::application::service::worker_service::WorkerService;
 use crate::application::service::worker_service::context::ResponseContext;
 use crate::application::service::worker_service::error::{OuterError, UpstreamError, WorkerError};
 use crate::application::service::worker_service::response::{ProcessError, ResponseBuilder};
-use crate::application::session_key_spi_port::{
-    ClientRepositoryError, SessionKey, SessionKeySpiPort,
-};
 use crate::application::{WorkerPorts, WorkerResponseError, WorkerResponseSpiPort};
 use crate::domain::ServiceRequestError;
-use crate::domain::value_objects::r2ps::{InnerResponse, OperationId, Status};
+use crate::domain::value_objects::r2ps::{InnerResponse, OperationId, PakePayloadVector, Status};
 use crate::domain::{Curve, EcPublicJwk, HsmKey, InnerResponseData, SessionId, WorkerResponse};
 use crate::infrastructure::adapters::outgoing::jose_adapter::JoseAdapter;
 use base64::Engine;
@@ -25,19 +25,20 @@ use spki::EncodePublicKey;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-struct MockSessionKeySpi;
-impl SessionKeySpiPort for MockSessionKeySpi {
-    fn store(&self, _id: &SessionId, _key: SessionKey) -> Result<Duration, ClientRepositoryError> {
-        Ok(Duration::from_secs(60))
-    }
-    fn get(&self, _id: &SessionId) -> Option<SessionKey> {
+struct MockSessionStateSpi;
+impl SessionStateSpiPort for MockSessionStateSpi {
+    fn get(&self, _id: &SessionId) -> Option<SessionState> {
         None
     }
-    fn get_remaining_ttl(&self, _id: &SessionId) -> Option<Duration> {
-        Some(Duration::from_secs(30))
-    }
-    fn end_session(&self, _id: &SessionId) -> Result<(), ClientRepositoryError> {
+    fn apply_transition(
+        &self,
+        _session_id: Option<&SessionId>,
+        _transition: Option<&SessionTransition>,
+    ) -> Result<(), SessionStateError> {
         Ok(())
+    }
+    fn get_remaining_ttl(&self, _session_id: Option<&SessionId>) -> Option<Duration> {
+        Some(Duration::from_secs(30))
     }
 }
 
@@ -61,7 +62,7 @@ impl PakePort for MockPake {
         &self,
         _request_bytes: &[u8],
         _client_id: &str,
-    ) -> Result<Vec<u8>, PakeError> {
+    ) -> Result<PakePayloadVector, PakeError> {
         Err(PakeError::RegistrationStartFailed)
     }
 
@@ -74,17 +75,22 @@ impl PakePort for MockPake {
         _request_bytes: &[u8],
         _password_file_bytes: &[u8],
         _client_id: &str,
-        _session_id: &SessionId,
-    ) -> Result<Vec<u8>, PakeError> {
+    ) -> Result<
+        (
+            PakePayloadVector,
+            crate::application::port::outgoing::session_state_spi_port::PendingLoginState,
+        ),
+        PakeError,
+    > {
         Err(PakeError::AuthStartFailed)
     }
 
     fn authentication_finish(
         &self,
         _finalization_bytes: &[u8],
-        _session_id: &SessionId,
+        _pending_state: &crate::application::port::outgoing::session_state_spi_port::PendingLoginState,
         _client_id: &str,
-    ) -> Result<Vec<u8>, PakeError> {
+    ) -> Result<SessionKey, PakeError> {
         Err(PakeError::AuthFinishFailed)
     }
 }
@@ -126,7 +132,7 @@ struct BuilderFixture {
 
 fn setup_builder() -> BuilderFixture {
     let (jose, verifier) = setup_crypto();
-    let builder = ResponseBuilder::new(jose.clone(), Arc::new(MockSessionKeySpi));
+    let builder = ResponseBuilder::new(jose.clone());
     BuilderFixture {
         builder,
         jose,
@@ -147,7 +153,7 @@ fn setup_worker_service() -> (
     });
 
     let ports = WorkerPorts {
-        session_key: Arc::new(MockSessionKeySpi),
+        session_state: Arc::new(MockSessionStateSpi),
         hsm: Arc::new(MockHsmSpi),
         worker_response: worker_response_spi.clone(),
         pake: Arc::new(MockPake),
@@ -169,6 +175,7 @@ fn mock_context(request_id: &str, op_id: OperationId) -> ResponseContext {
         request_id: request_id.to_string(),
         request_type: op_id,
         session_key: Some(SessionKey::new(vec![0u8; 32])),
+        ttl: Some(Duration::from_secs(30)),
         device_public_key: EcPublicJwk {
             kty: "EC".to_string(),
             crv: "P-256".to_string(),
@@ -195,6 +202,7 @@ mod response_encoding {
             state: None,
             data: InnerResponseData::new("success_data").unwrap(),
             session_id: Some(SessionId::new()),
+            session_transition: None,
         };
 
         let response = builder.encode_response(op_result, &context).unwrap();
@@ -215,6 +223,7 @@ mod response_encoding {
             state: None,
             data: InnerResponseData::new("success_data").unwrap(),
             session_id: None,
+            session_transition: None,
         };
 
         let response = builder.encode_response(op_result, &context).unwrap();

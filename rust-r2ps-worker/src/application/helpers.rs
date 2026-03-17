@@ -8,9 +8,42 @@ pub fn debug_log_payload(payload: &[u8], context: &str) {
     }
 }
 
-/// Macro to create distinct New Type wrappers around `Vec<u8>` with common behavior
+/// Macro to create distinct New Type wrappers around `Vec<u8>` with common behavior.
+/// Optional second argument `$max_bytes` limits Debug output to that many bytes, formatted
+/// as a quoted truncated hex string: `Name("deadbeef...")`.
 #[macro_export]
 macro_rules! define_byte_vector {
+    ($name:ident) => {
+        $crate::define_byte_vector!($name, full);
+    };
+    ($name:ident, $max_bytes:literal) => {
+        $crate::define_byte_vector_base!($name);
+
+        impl std::fmt::Debug for $name {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                if self.0.len() > $max_bytes {
+                    let head = hex::encode(&self.0[..$max_bytes - 1]);
+                    let tail = hex::encode(&self.0[self.0.len() - 1..]);
+                    write!(f, "{}({}...{})", stringify!($name), head, tail)
+                } else {
+                    write!(f, "{}({})", stringify!($name), hex::encode(&self.0))
+                }
+            }
+        }
+    };
+    ($name:ident, full) => {
+        $crate::define_byte_vector_base!($name);
+
+        impl std::fmt::Debug for $name {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                write!(f, "{}({})", stringify!($name), hex::encode(&self.0))
+            }
+        }
+    };
+}
+
+#[macro_export]
+macro_rules! define_byte_vector_base {
     ($name:ident) => {
         #[derive(Clone)]
         pub struct $name(Vec<u8>);
@@ -30,12 +63,6 @@ macro_rules! define_byte_vector {
 
             fn deref(&self) -> &Vec<u8> {
                 &self.0
-            }
-        }
-
-        impl std::fmt::Debug for $name {
-            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-                write!(f, "{}({})", stringify!($name), hex::encode(&self.0))
             }
         }
 

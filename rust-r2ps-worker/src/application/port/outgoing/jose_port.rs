@@ -1,4 +1,4 @@
-use crate::application::session_key_spi_port::SessionKey;
+use crate::application::port::outgoing::session_state_spi_port::SessionKey;
 use crate::domain::EcPublicJwk;
 
 #[derive(Debug)]
