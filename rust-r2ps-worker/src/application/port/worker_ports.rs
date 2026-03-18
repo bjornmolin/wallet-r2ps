@@ -1,12 +1,12 @@
 use crate::application::WorkerResponseSpiPort;
 use crate::application::hsm_spi_port::HsmSpiPort;
 use crate::application::port::outgoing::pake_port::PakePort;
-use crate::application::session_key_spi_port::SessionKeySpiPort;
+use crate::application::port::outgoing::session_state_spi_port::SessionStateSpiPort;
 use std::sync::Arc;
 
 pub struct WorkerPorts {
     pub worker_response: Arc<dyn WorkerResponseSpiPort + Send + Sync>,
-    pub session_key: Arc<dyn SessionKeySpiPort + Send + Sync>,
+    pub session_state: Arc<dyn SessionStateSpiPort>,
     pub hsm: Arc<dyn HsmSpiPort + Send + Sync>,
     pub pake: Arc<dyn PakePort>,
 }

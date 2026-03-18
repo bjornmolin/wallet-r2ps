@@ -1,16 +1,15 @@
 use crate::application::port::outgoing::pake_port;
+use crate::application::port::outgoing::session_state_spi_port::{PendingLoginState, SessionKey};
 use crate::domain;
+use crate::domain::value_objects::r2ps::PakePayloadVector;
 use argon2::password_hash::rand_core::OsRng;
 use base64::Engine;
 use base64::prelude::BASE64_STANDARD;
-use moka::sync::Cache;
 use opaque_ke;
 use p256::NistP256;
 use p256::elliptic_curve::sec1::ToEncodedPoint;
 use p256::pkcs8::DecodePrivateKey;
 use pem::Pem;
-use std::sync::{Arc, Mutex};
-use std::time::Duration;
 use tracing::{debug, info, warn};
 
 #[derive(Clone, Copy)]
@@ -22,27 +21,10 @@ impl opaque_ke::CipherSuite for DefaultCipherSuite {
     type Ksf = opaque_ke::ksf::Identity;
 }
 
-struct PendingLogin {
-    server_login: Mutex<Option<opaque_ke::ServerLogin<DefaultCipherSuite>>>,
-}
-
-impl PendingLogin {
-    fn new(server_login: opaque_ke::ServerLogin<DefaultCipherSuite>) -> Self {
-        Self {
-            server_login: Mutex::new(Some(server_login)),
-        }
-    }
-
-    fn take(&self) -> Option<opaque_ke::ServerLogin<DefaultCipherSuite>> {
-        self.server_login.lock().unwrap().take()
-    }
-}
-
 pub struct OpaquePakeAdapter {
     server_setup: opaque_ke::ServerSetup<DefaultCipherSuite>,
     context: String,
     server_identifier: String,
-    pending_logins: Cache<domain::SessionId, Arc<PendingLogin>>,
 }
 
 impl OpaquePakeAdapter {
@@ -51,15 +33,10 @@ impl OpaquePakeAdapter {
         context: String,
         server_identifier: String,
     ) -> Self {
-        let pending_logins = Cache::builder()
-            .time_to_live(Duration::from_secs(600))
-            .max_capacity(10_000)
-            .build();
         Self {
             server_setup,
             context,
             server_identifier,
-            pending_logins,
         }
     }
 
@@ -111,7 +88,7 @@ impl pake_port::PakePort for OpaquePakeAdapter {
         &self,
         request_bytes: &[u8],
         client_id: &str,
-    ) -> Result<Vec<u8>, pake_port::PakeError> {
+    ) -> Result<PakePayloadVector, pake_port::PakeError> {
         let registration_request = opaque_ke::RegistrationRequest::deserialize(request_bytes)
             .map_err(|e| {
                 warn!("invalid registration request: {:?}", e);
@@ -130,7 +107,7 @@ impl pake_port::PakePort for OpaquePakeAdapter {
             pake_port::PakeError::RegistrationStartFailed
         })?;
 
-        Ok(result.message.serialize().to_vec())
+        Ok(PakePayloadVector::new(result.message.serialize().to_vec()))
     }
 
     fn registration_finish(
@@ -155,8 +132,7 @@ impl pake_port::PakePort for OpaquePakeAdapter {
         request_bytes: &[u8],
         password_file_bytes: &[u8],
         client_id: &str,
-        session_id: &domain::SessionId,
-    ) -> Result<Vec<u8>, pake_port::PakeError> {
+    ) -> Result<(PakePayloadVector, PendingLoginState), pake_port::PakeError> {
         let password_file =
             opaque_ke::ServerRegistration::<DefaultCipherSuite>::deserialize(password_file_bytes)
                 .map_err(|e| {
@@ -188,27 +164,24 @@ impl pake_port::PakePort for OpaquePakeAdapter {
             pake_port::PakeError::AuthStartFailed
         })?;
 
-        let response_bytes = result.message.serialize().to_vec();
-        self.pending_logins.insert(
-            session_id.clone(),
-            Arc::new(PendingLogin::new(result.state)),
-        );
+        let response = PakePayloadVector::new(result.message.serialize().to_vec());
+        let pending_state = PendingLoginState::new(result.state.serialize().to_vec());
 
-        Ok(response_bytes)
+        Ok((response, pending_state))
     }
 
     fn authentication_finish(
         &self,
         finalization_bytes: &[u8],
-        session_id: &domain::SessionId,
+        pending_state: &PendingLoginState,
         client_id: &str,
-    ) -> Result<Vec<u8>, pake_port::PakeError> {
-        let pending = self
-            .pending_logins
-            .remove(session_id)
-            .ok_or(pake_port::PakeError::UnknownSession)?;
-
-        let server_login = pending.take().ok_or(pake_port::PakeError::UnknownSession)?;
+    ) -> Result<SessionKey, pake_port::PakeError> {
+        let server_login =
+            opaque_ke::ServerLogin::<DefaultCipherSuite>::deserialize(pending_state.as_ref())
+                .map_err(|e| {
+                    warn!("invalid pending login state: {:?}", e);
+                    pake_port::PakeError::InvalidRequest
+                })?;
 
         let finalization = opaque_ke::CredentialFinalization::deserialize(finalization_bytes)
             .map_err(|e| {
@@ -224,7 +197,7 @@ impl pake_port::PakePort for OpaquePakeAdapter {
             pake_port::PakeError::AuthFinishFailed
         })?;
 
-        Ok(result.session_key.to_vec())
+        Ok(SessionKey::new(result.session_key.to_vec()))
     }
 }
 

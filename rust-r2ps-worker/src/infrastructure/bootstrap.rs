@@ -3,11 +3,11 @@ use crate::application::{OpaqueConfig, WorkerPorts, WorkerService};
 use crate::infrastructure::KafkaConfig;
 use crate::infrastructure::adapters::outgoing::jose_adapter::JoseAdapter;
 use crate::infrastructure::adapters::outgoing::opaque_pake_adapter::OpaquePakeAdapter;
+use crate::infrastructure::adapters::outgoing::session_state_memory_cache::SessionStateMemoryCache;
 use crate::infrastructure::config::app_config::AppConfig;
 use crate::infrastructure::config::load_pem_from_base64;
 use crate::infrastructure::hsm_wrapper::HsmWrapper;
 use crate::infrastructure::r2ps_response_kafka_message_sender::WorkerResponseKafkaSender;
-use crate::infrastructure::session_key_memory_cache::SessionKeyMemoryCache;
 use crate::infrastructure::state_init_response_kafka_sender::StateInitResponseKafkaMessageSender;
 use std::sync::Arc;
 
@@ -36,7 +36,7 @@ pub fn build_services(
 
     let ports = WorkerPorts {
         worker_response: Arc::new(WorkerResponseKafkaSender::new(&kafka_config)),
-        session_key: Arc::new(SessionKeyMemoryCache::new()),
+        session_state: Arc::new(SessionStateMemoryCache::new()),
         hsm: Arc::new(HsmWrapper::new(app_config.clone().into()).unwrap()),
         pake,
     };

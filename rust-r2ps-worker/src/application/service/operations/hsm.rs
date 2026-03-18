@@ -51,6 +51,7 @@ impl ServiceOperation for HsmSignOperation {
             state: None,
             data: InnerResponseData::new(SignatureResponse { signature })?,
             session_id: context.session_id,
+            session_transition: None,
         })
     }
 }
@@ -88,6 +89,7 @@ impl ServiceOperation for HsmGenerateKeyOperation {
                 public_key: hsm_key.public_key_jwk,
             })?,
             session_id: context.session_id,
+            session_transition: None,
         })
     }
 }
@@ -112,6 +114,7 @@ impl ServiceOperation for HsmDeleteKeyOperation {
                 hsm_kid: payload.hsm_kid,
             })?,
             session_id: context.session_id,
+            session_transition: None,
         })
     }
 }
@@ -136,6 +139,7 @@ impl ServiceOperation for HsmListKeysOperation {
             state: None,
             data: InnerResponseData::new(payload)?,
             session_id: context.session_id,
+            session_transition: None,
         })
     }
 }

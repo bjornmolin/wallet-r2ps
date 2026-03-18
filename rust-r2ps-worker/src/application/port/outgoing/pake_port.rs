@@ -1,4 +1,6 @@
+use crate::application::port::outgoing::session_state_spi_port::{PendingLoginState, SessionKey};
 use crate::domain;
+use crate::domain::value_objects::r2ps::PakePayloadVector;
 
 #[derive(Debug)]
 pub enum PakeError {
@@ -7,7 +9,6 @@ pub enum PakeError {
     AuthStartFailed,
     AuthFinishFailed,
     RegistrationStartFailed,
-    UnknownSession,
 }
 
 pub struct RegistrationResult {
@@ -20,7 +21,7 @@ pub trait PakePort: Send + Sync {
         &self,
         request_bytes: &[u8],
         client_id: &str,
-    ) -> Result<Vec<u8>, PakeError>;
+    ) -> Result<PakePayloadVector, PakeError>;
 
     fn registration_finish(&self, upload_bytes: &[u8]) -> Result<RegistrationResult, PakeError>;
 
@@ -29,13 +30,12 @@ pub trait PakePort: Send + Sync {
         request_bytes: &[u8],
         password_file_bytes: &[u8],
         client_id: &str,
-        session_id: &domain::SessionId,
-    ) -> Result<Vec<u8>, PakeError>;
+    ) -> Result<(PakePayloadVector, PendingLoginState), PakeError>;
 
     fn authentication_finish(
         &self,
         finalization_bytes: &[u8],
-        session_id: &domain::SessionId,
+        pending_state: &PendingLoginState,
         client_id: &str,
-    ) -> Result<Vec<u8>, PakeError>;
+    ) -> Result<SessionKey, PakeError>;
 }

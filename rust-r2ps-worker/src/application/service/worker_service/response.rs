@@ -4,7 +4,6 @@ use crate::application::service::worker_service::context::ResponseContext;
 use crate::application::service::worker_service::error::{
     ProblemDetail, UpstreamError, WorkerError,
 };
-use crate::application::session_key_spi_port::SessionKeySpiPort;
 use crate::domain::value_objects::r2ps::{InnerResponse, OuterResponse, Status};
 use crate::domain::{
     DeviceHsmState, EncryptOption, SessionId, TypedJwe, TypedJws, WorkerRequestError,
@@ -23,18 +22,11 @@ pub struct ProcessError {
 /// encryption policy (Session vs. Device) and wrapping them in signed outer responses (JWS).
 pub struct ResponseBuilder {
     jose: Arc<dyn jose_port::JosePort>,
-    session_key_spi_port: Arc<dyn SessionKeySpiPort + Send + Sync>,
 }
 
 impl ResponseBuilder {
-    pub fn new(
-        jose: Arc<dyn jose_port::JosePort>,
-        session_key_spi_port: Arc<dyn SessionKeySpiPort + Send + Sync>,
-    ) -> Self {
-        Self {
-            jose,
-            session_key_spi_port,
-        }
+    pub fn new(jose: Arc<dyn jose_port::JosePort>) -> Self {
+        Self { jose }
     }
 
     /// Encodes a successful `OperationResult` into a full `WorkerResponse`.
@@ -43,7 +35,7 @@ impl ResponseBuilder {
         operation_result: OperationResult,
         context: &ResponseContext,
     ) -> Result<WorkerResponse, WorkerError> {
-        let inner_response = self.build_inner_response(&operation_result)?;
+        let inner_response = self.build_inner_response(&operation_result, context.ttl)?;
         let inner_jwe = self.encrypt_inner_response(&inner_response, context)?;
         let outer_response_jws =
             self.build_outer_response_jws(inner_jwe, operation_result.session_id)?;
@@ -62,16 +54,12 @@ impl ResponseBuilder {
     fn build_inner_response(
         &self,
         operation_result: &OperationResult,
+        ttl: Option<std::time::Duration>,
     ) -> Result<InnerResponse, UpstreamError> {
         let encoded_result = operation_result
             .data
             .serialize()
             .map_err(|_| UpstreamError::EncodeFailed("serialize_inner_response_failed"))?;
-
-        let ttl = match operation_result.session_id.as_ref() {
-            Some(id) => self.session_key_spi_port.get_remaining_ttl(id),
-            None => None,
-        };
 
         let serialized_data = String::from_utf8(encoded_result)
             .map_err(|_| UpstreamError::EncodeFailed("serialize_inner_response_failed"))?;

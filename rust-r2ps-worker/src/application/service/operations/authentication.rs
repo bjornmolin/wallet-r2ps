@@ -1,9 +1,11 @@
-use super::{OperationContext, OperationResult, ServiceOperation};
+use super::{OperationContext, OperationResult, ServiceOperation, SessionTransition};
 use crate::application::port::outgoing::pake_port;
-use crate::application::session_key_spi_port::{SessionKey, SessionKeySpiPort};
+use crate::application::port::outgoing::session_state_spi_port::{
+    OngoingOperation, SessionState,
+};
 use crate::domain;
 use std::sync::Arc;
-use tracing::{debug, warn};
+use tracing::warn;
 
 fn pake_err_to_service_err(e: pake_port::PakeError) -> domain::ServiceRequestError {
     match e {
@@ -22,7 +24,6 @@ fn pake_err_to_service_err(e: pake_port::PakeError) -> domain::ServiceRequestErr
         pake_port::PakeError::RegistrationStartFailed => {
             domain::ServiceRequestError::ServerRegistrationStartFailed
         }
-        pake_port::PakeError::UnknownSession => domain::ServiceRequestError::UnknownSession,
     }
 }
 
@@ -51,25 +52,27 @@ impl ServiceOperation for AuthenticateStartOperation {
 
         let session_id = domain::SessionId::new();
 
-        let response_bytes = self
+        let (response, pending_state) = self
             .pake_port
             .authentication_start(
                 pake_request.data.as_ref(),
                 password_file.as_bytes(),
                 &context.device_kid,
-                &session_id,
             )
             .map_err(pake_err_to_service_err)?;
 
         let payload = domain::PakeResponse {
-            task: None,
-            data: Some(domain::PakePayloadVector::new(response_bytes)),
+            data: Some(response),
         };
 
         Ok(OperationResult {
             state: None,
             data: domain::InnerResponseData::new(payload)?,
             session_id: Some(session_id),
+            session_transition: Some(SessionTransition::CreatePendingAuth {
+                pending_state,
+                purpose: pake_request.purpose,
+            }),
         })
     }
 }
@@ -77,18 +80,11 @@ impl ServiceOperation for AuthenticateStartOperation {
 // AuthenticateFinish Operation
 pub struct AuthenticateFinishOperation {
     pake_port: Arc<dyn pake_port::PakePort>,
-    session_key_spi_port: Arc<dyn SessionKeySpiPort + Send + Sync>,
 }
 
 impl AuthenticateFinishOperation {
-    pub fn new(
-        pake_port: Arc<dyn pake_port::PakePort>,
-        session_key_spi_port: Arc<dyn SessionKeySpiPort + Send + Sync>,
-    ) -> Self {
-        Self {
-            pake_port,
-            session_key_spi_port,
-        }
+    pub fn new(pake_port: Arc<dyn pake_port::PakePort>) -> Self {
+        Self { pake_port }
     }
 }
 
@@ -104,22 +100,24 @@ impl ServiceOperation for AuthenticateFinishOperation {
             .as_ref()
             .ok_or(domain::ServiceRequestError::UnknownSession)?;
 
-        let session_key_bytes = self
+        let pending = match &context.session_state {
+            Some(SessionState::PendingAuth(data)) => data,
+            _ => return Err(domain::ServiceRequestError::UnknownSession),
+        };
+
+        let session_key = self
             .pake_port
-            .authentication_finish(pake_request.data.as_ref(), session_id, &context.device_kid)
+            .authentication_finish(
+                pake_request.data.as_ref(),
+                &pending.server_login,
+                &context.device_kid,
+            )
             .map_err(|e| {
                 warn!("authentication finish failed: {:?}", e);
                 pake_err_to_service_err(e)
             })?;
 
-        let session_key = SessionKey::new(session_key_bytes);
-
-        self.session_key_spi_port
-            .store(session_id, session_key)
-            .map_err(|_| domain::ServiceRequestError::InternalServerError)?;
-
         let payload = domain::PakeResponse {
-            task: None,
             data: None,
         };
 
@@ -127,6 +125,7 @@ impl ServiceOperation for AuthenticateFinishOperation {
             state: None,
             data: domain::InnerResponseData::new(payload)?,
             session_id: Some(session_id.clone()),
+            session_transition: Some(SessionTransition::Authenticate { session_key }),
         })
     }
 }
@@ -163,20 +162,20 @@ impl ServiceOperation for RegisterStartOperation {
             return Err(domain::ServiceRequestError::InvalidAuthorizationCode);
         }
 
-        let response_bytes = self
+        let response = self
             .pake_port
             .registration_start(pake_request.data.as_ref(), &context.device_kid)
             .map_err(pake_err_to_service_err)?;
 
         let payload = domain::PakeResponse {
-            task: None,
-            data: Some(domain::PakePayloadVector::new(response_bytes)),
+            data: Some(response),
         };
 
         Ok(OperationResult {
             state: None,
             data: domain::InnerResponseData::new(payload)?,
             session_id: context.session_id,
+            session_transition: None,
         })
     }
 }
@@ -235,7 +234,6 @@ impl ServiceOperation for RegisterFinishOperation {
         )?;
 
         let payload = domain::PakeResponse {
-            task: None,
             data: None,
         };
 
@@ -243,6 +241,7 @@ impl ServiceOperation for RegisterFinishOperation {
             state: Some(new_state),
             data: domain::InnerResponseData::new(payload)?,
             session_id: context.session_id,
+            session_transition: None,
         })
     }
 }
@@ -278,20 +277,20 @@ impl ServiceOperation for PinChangeStartOperation {
             return Err(domain::ServiceRequestError::UnknownSession);
         }
 
-        let response_bytes = self
+        let response = self
             .pake_port
             .registration_start(pake_request.data.as_ref(), &context.device_kid)
             .map_err(pake_err_to_service_err)?;
 
         let payload = domain::PakeResponse {
-            task: None,
-            data: Some(domain::PakePayloadVector::new(response_bytes)),
+            data: Some(response),
         };
 
         Ok(OperationResult {
             state: None,
             data: domain::InnerResponseData::new(payload)?,
             session_id: context.session_id,
+            session_transition: Some(SessionTransition::BeginChangingPin),
         })
     }
 }
@@ -299,18 +298,11 @@ impl ServiceOperation for PinChangeStartOperation {
 // PinChangeFinish Operation
 pub struct PinChangeFinishOperation {
     pake_port: Arc<dyn pake_port::PakePort>,
-    session_key_spi_port: Arc<dyn SessionKeySpiPort + Send + Sync>,
 }
 
 impl PinChangeFinishOperation {
-    pub fn new(
-        pake_port: Arc<dyn pake_port::PakePort>,
-        session_key_spi_port: Arc<dyn SessionKeySpiPort + Send + Sync>,
-    ) -> Self {
-        Self {
-            pake_port,
-            session_key_spi_port,
-        }
+    pub fn new(pake_port: Arc<dyn pake_port::PakePort>) -> Self {
+        Self { pake_port }
     }
 }
 
@@ -321,8 +313,12 @@ impl ServiceOperation for PinChangeFinishOperation {
     ) -> Result<OperationResult, domain::ServiceRequestError> {
         let pake_payload = domain::PakeRequest::from_inner_request(context.inner_request)?;
 
-        if context.session_id.is_none() {
-            return Err(domain::ServiceRequestError::UnknownSession);
+        let is_changing_pin = matches!(
+            &context.session_state,
+            Some(SessionState::Active(data)) if matches!(data.operation, Some(OngoingOperation::ChangingPin))
+        );
+        if !is_changing_pin {
+            return Err(domain::ServiceRequestError::InvalidOperation);
         }
 
         let pake_port::RegistrationResult {
@@ -342,17 +338,7 @@ impl ServiceOperation for PinChangeFinishOperation {
         let mut new_state = context.state;
         new_state.set_password_file(&context.device_kid, password_file_entry, None)?;
 
-        self.session_key_spi_port
-            .end_session(context.session_id.as_ref().unwrap())
-            .map_err(|_| domain::ServiceRequestError::InternalServerError)?;
-
-        debug!(
-            "Pin change completed and session ended: {:?}",
-            context.session_id.as_ref().unwrap()
-        );
-
         let payload = domain::PakeResponse {
-            task: None,
             data: None,
         };
 
@@ -360,6 +346,7 @@ impl ServiceOperation for PinChangeFinishOperation {
             state: Some(new_state),
             data: domain::InnerResponseData::new(payload)?,
             session_id: context.session_id,
+            session_transition: Some(SessionTransition::End),
         })
     }
 }

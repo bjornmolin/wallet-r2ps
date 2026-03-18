@@ -9,6 +9,9 @@ mod tests;
 pub use context::{ResponseContext, WorkerInput};
 pub use error::{OuterError, ProblemDetail, UpstreamError, WorkerError};
 
+use crate::application::port::outgoing::session_state_spi_port::{
+    SessionState, SessionStateSpiPort,
+};
 use crate::application::service::operations::OperationDispatcher;
 use crate::application::{
     WorkerPorts, WorkerRequestId, WorkerRequestUseCase, WorkerResponseSpiPort, jose_port,
@@ -27,25 +30,22 @@ pub struct WorkerService {
     operation_dispatcher: OperationDispatcher,
     request_decoder: RequestDecoder,
     response_builder: ResponseBuilder,
+    session_state_port: Arc<dyn SessionStateSpiPort>,
 }
 
 impl WorkerService {
     pub fn new(jose: Arc<dyn jose_port::JosePort>, ports: WorkerPorts) -> Self {
-        let operation_dispatcher = OperationDispatcher::from_dependencies(
-            ports.pake,
-            ports.session_key.clone(),
-            ports.hsm,
-        );
+        let operation_dispatcher = OperationDispatcher::from_dependencies(ports.pake, ports.hsm);
 
-        let request_decoder = RequestDecoder::new(jose.clone(), ports.session_key.clone());
-
-        let response_builder = ResponseBuilder::new(jose.clone(), ports.session_key.clone());
+        let request_decoder = RequestDecoder::new(jose.clone());
+        let response_builder = ResponseBuilder::new(jose);
 
         Self {
             worker_response_spi_port: ports.worker_response,
             operation_dispatcher,
             request_decoder,
             response_builder,
+            session_state_port: ports.session_state,
         }
     }
 }
@@ -95,21 +95,48 @@ impl WorkerRequestUseCase for WorkerService {
 }
 
 impl WorkerService {
-    /// The core execution pipeline: Decode -> Dispatch -> Encode.
+    /// The core execution pipeline: Decode → Read state → Dispatch → Apply transition → Encode.
     fn process_request(&self, request: HsmWorkerRequest) -> Result<WorkerResponse, ProcessError> {
-        // Decode
-        let WorkerInput {
-            operation_context,
-            response_context,
-        } = self
+        // Phase 1: Decode outer (pure — no side effects)
+        let partial = self
             .request_decoder
-            .decode_request(request)
+            .decode_outer(request)
             .map_err(|error| ProcessError {
                 error,
                 context: None,
             })?;
 
-        // Dispatch
+        let session_id = partial.outer_request.session_id.clone();
+
+        // Phase 2: Read session state from cache
+        let session_state = session_id
+            .as_ref()
+            .and_then(|id| self.session_state_port.get(id));
+
+        let session_key_for_response = match &session_state {
+            Some(SessionState::Active(data)) => Some(data.session_key.clone()),
+            _ => None,
+        };
+
+        // Phase 3: Decode inner (pure — no side effects)
+        let WorkerInput {
+            mut operation_context,
+            response_context,
+        } = self
+            .request_decoder
+            .decode_inner(
+                partial,
+                session_id.clone(),
+                session_key_for_response.as_ref(),
+            )
+            .map_err(|error| ProcessError {
+                error,
+                context: None,
+            })?;
+
+        operation_context.session_state = session_state;
+
+        // Phase 4: Dispatch (pure — no side effects)
         let operation_result = self
             .operation_dispatcher
             .dispatch(operation_context)
@@ -118,12 +145,34 @@ impl WorkerService {
                 context: Some(Box::new(response_context.clone())),
             })?;
 
-        // Encode
+        // Phase 5: Apply session state transition
+        self.session_state_port
+            .apply_transition(
+                operation_result.session_id.as_ref(),
+                operation_result.session_transition.as_ref(),
+            )
+            .map_err(|_| ProcessError {
+                error: WorkerError::Inner(crate::domain::ServiceRequestError::InternalServerError),
+                context: Some(Box::new(response_context.clone())),
+            })?;
+
+        // Phase 6: Compute TTL from post-transition state
+        let ttl = self
+            .session_state_port
+            .get_remaining_ttl(operation_result.session_id.as_ref());
+
+        // Phase 7: Encode response (pure — no side effects)
+        let full_response_context = ResponseContext {
+            session_key: session_key_for_response,
+            ttl,
+            ..response_context
+        };
+
         self.response_builder
-            .encode_response(operation_result, &response_context)
+            .encode_response(operation_result, &full_response_context)
             .map_err(|error| ProcessError {
                 error,
-                context: Some(Box::new(response_context)),
+                context: Some(Box::new(full_response_context)),
             })
     }
 }

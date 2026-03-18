@@ -84,7 +84,7 @@ impl WorkerRequestKafkaReceiver {
                         // Extract key (optional)
                         let key = msg.key_view::<str>().unwrap();
 
-                        debug!("Received message: key='{:?}'", key);
+                        debug!("Received message: key={:?}", key);
 
                         let hsm_worker_request = HsmWorkerRequest {
                             request_id: hsm_worker_request_dto.request_id,
