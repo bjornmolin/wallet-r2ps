@@ -50,8 +50,8 @@ pub struct DeviceKeyEntry {
 }
 
 impl DeviceKeyEntry {
-    pub fn kid(&self) -> Option<&str> {
-        Some(self.public_key.kid.as_str())
+    pub fn kid(&self) -> &str {
+        &self.public_key.kid
     }
 }
 
@@ -80,21 +80,17 @@ impl DeviceHsmState {
 
     /// Find device key entry by kid
     pub fn find_device_key(&self, kid: &str) -> Option<&DeviceKeyEntry> {
-        self.device_keys
-            .iter()
-            .find(|entry| entry.kid() == Some(kid))
+        self.device_keys.iter().find(|entry| entry.kid() == kid)
     }
 
     /// Find mutable device key entry by kid
     pub fn find_device_key_mut(&mut self, kid: &str) -> Option<&mut DeviceKeyEntry> {
-        self.device_keys
-            .iter_mut()
-            .find(|entry| entry.kid() == Some(kid))
+        self.device_keys.iter_mut().find(|entry| entry.kid() == kid)
     }
 
     /// Add device key entry, ensuring no duplicate kid
     pub fn add_device_key(&mut self, entry: DeviceKeyEntry) -> Result<(), ServiceRequestError> {
-        let kid = entry.kid().ok_or(ServiceRequestError::InvalidPublicKey)?;
+        let kid = entry.kid();
 
         if kid.is_empty() {
             return Err(ServiceRequestError::InvalidPublicKey);
@@ -113,7 +109,7 @@ impl DeviceHsmState {
         let pos = self
             .device_keys
             .iter()
-            .position(|entry| entry.kid() == Some(kid))
+            .position(|entry| entry.kid() == kid)
             .ok_or(ServiceRequestError::UnknownClient)?;
 
         Ok(self.device_keys.remove(pos))

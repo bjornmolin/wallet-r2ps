@@ -444,7 +444,7 @@ impl PakeRequest {
 }
 
 /// Errors that can occur during service request processing.
-#[derive(Debug, Clone, Serialize, Deserialize, Display)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Display)]
 #[cfg_attr(feature = "openapi", derive(ToSchema))]
 pub enum ServiceRequestError {
     /// JWS signature verification or encoding failed
