@@ -5,6 +5,9 @@ pub mod session_state_spi_port;
 pub mod state_init_response_spi_port;
 pub mod worker_response_spi_port;
 
+#[cfg(test)]
+mod session_state_spi_port_tests;
+
 pub use jose_port::{JoseError, JosePort, JweDecryptionKey, JweEncryptionKey};
 pub use pake_port::PakePort;
 pub use state_init_response_spi_port::StateInitResponseSpiPort;
