@@ -141,6 +141,10 @@ impl WorkerService {
             })?;
 
         operation_context.session_state = session_state;
+        let response_context = ResponseContext {
+            session_key: session_key_for_response.clone(),
+            ..response_context
+        };
 
         // Phase 4: Dispatch (pure — no side effects)
         let operation_result = self
@@ -169,7 +173,6 @@ impl WorkerService {
 
         // Phase 7: Encode response (pure — no side effects)
         let full_response_context = ResponseContext {
-            session_key: session_key_for_response,
             ttl,
             ..response_context
         };

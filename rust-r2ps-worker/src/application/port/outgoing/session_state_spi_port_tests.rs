@@ -5,15 +5,6 @@ use crate::application::port::outgoing::session_state_spi_port::{
 use crate::domain::SessionId;
 use crate::infrastructure::adapters::outgoing::session_state_memory_cache::SessionStateMemoryCache;
 
-type CacheFactory = fn() -> (SessionStateMemoryCache, SessionId);
-type ValidCase = (
-    &'static str,
-    CacheFactory,
-    SessionTransition,
-    Box<dyn Fn(Option<SessionState>)>,
-);
-type InvalidCase = (&'static str, CacheFactory, SessionTransition);
-
 fn create_pending_auth() -> SessionTransition {
     SessionTransition::CreatePendingAuth {
         pending_state: PendingLoginState::new(vec![1, 2]),
@@ -55,9 +46,26 @@ fn seeded_active_changing_pin() -> (SessionStateMemoryCache, SessionId) {
     (cache, id)
 }
 
+/// Seed the cache into Active(has_performed_hsm_operation: true) state (HSM op already done)
+fn seeded_active_hsm_op_done() -> (SessionStateMemoryCache, SessionId) {
+    let (cache, id) = seeded_active();
+    cache
+        .apply_transition(
+            Some(&id),
+            Some(&SessionTransition::MarkHsmOperationPerformed),
+        )
+        .unwrap();
+    (cache, id)
+}
+
 #[test]
 fn valid_transitions() {
-    let cases: &[ValidCase] = &[
+    let cases: &[(
+        &str,
+        fn() -> (SessionStateMemoryCache, SessionId),
+        SessionTransition,
+        Box<dyn Fn(Option<SessionState>)>,
+    )] = &[
         (
             "None + CreatePendingAuth → PendingAuth",
             || (SessionStateMemoryCache::new(), SessionId::new()),
@@ -93,8 +101,29 @@ fn valid_transitions() {
             }),
         ),
         (
+            "Active + MarkHsmOperationPerformed → Active(hsm_op: true)",
+            seeded_active,
+            SessionTransition::MarkHsmOperationPerformed,
+            Box::new(|s| {
+                assert!(matches!(
+                    s,
+                    Some(SessionState::Active(SessionData {
+                        has_performed_hsm_operation: true,
+                        operation: None,
+                        ..
+                    }))
+                ))
+            }),
+        ),
+        (
             "Active + End → None",
             seeded_active,
+            SessionTransition::End,
+            Box::new(|s| assert!(s.is_none())),
+        ),
+        (
+            "Active(hsm_op: true) + End → None",
+            seeded_active_hsm_op_done,
             SessionTransition::End,
             Box::new(|s| assert!(s.is_none())),
         ),
@@ -118,7 +147,11 @@ fn valid_transitions() {
 
 #[test]
 fn invalid_transitions() {
-    let cases: &[InvalidCase] = &[
+    let cases: &[(
+        &str,
+        fn() -> (SessionStateMemoryCache, SessionId),
+        SessionTransition,
+    )] = &[
         // CreatePendingAuth requires no existing session
         (
             "PendingAuth + CreatePendingAuth",
@@ -162,6 +195,27 @@ fn invalid_transitions() {
             "Active(ChangingPin) + BeginChangingPin",
             seeded_active_changing_pin,
             SessionTransition::BeginChangingPin,
+        ),
+        // MarkHsmOperationPerformed requires Active with no ongoing operation and no prior HSM op
+        (
+            "None + MarkHsmOperationPerformed",
+            || (SessionStateMemoryCache::new(), SessionId::new()),
+            SessionTransition::MarkHsmOperationPerformed,
+        ),
+        (
+            "PendingAuth + MarkHsmOperationPerformed",
+            seeded_pending_auth,
+            SessionTransition::MarkHsmOperationPerformed,
+        ),
+        (
+            "Active(ChangingPin) + MarkHsmOperationPerformed",
+            seeded_active_changing_pin,
+            SessionTransition::MarkHsmOperationPerformed,
+        ),
+        (
+            "Active(hsm_op: true) + MarkHsmOperationPerformed",
+            seeded_active_hsm_op_done,
+            SessionTransition::MarkHsmOperationPerformed,
         ),
         // End requires Active
         (

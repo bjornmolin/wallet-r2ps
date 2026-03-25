@@ -1,5 +1,6 @@
-use super::{OperationContext, OperationResult, ServiceOperation};
+use super::{OperationContext, OperationResult, ServiceOperation, SessionTransition};
 use crate::application::hsm_spi_port::HsmSpiPort;
+use crate::application::port::outgoing::session_state_spi_port::SessionState;
 use crate::define_byte_vector;
 use crate::domain::{
     CreateKeyServiceData, CreateKeyServiceDataResponse, DeleteKeyServiceData, InnerResponseData,
@@ -23,6 +24,13 @@ define_byte_vector!(MessageVector);
 
 impl ServiceOperation for HsmSignOperation {
     fn execute(&self, context: OperationContext) -> Result<OperationResult, ServiceRequestError> {
+        // Only allow one HSM mutating operation per session
+        if let Some(SessionState::Active(data)) = &context.session_state
+            && data.has_performed_hsm_operation
+        {
+            return Err(ServiceRequestError::InvalidOperation);
+        }
+
         let data = context
             .inner_request
             .data
@@ -51,7 +59,7 @@ impl ServiceOperation for HsmSignOperation {
             state: None,
             data: InnerResponseData::new(SignatureResponse { signature })?,
             session_id: context.session_id,
-            session_transition: None,
+            session_transition: Some(SessionTransition::MarkHsmOperationPerformed),
         })
     }
 }
@@ -68,6 +76,13 @@ impl HsmGenerateKeyOperation {
 
 impl ServiceOperation for HsmGenerateKeyOperation {
     fn execute(&self, context: OperationContext) -> Result<OperationResult, ServiceRequestError> {
+        // Only allow one HSM mutating operation per session
+        if let Some(SessionState::Active(data)) = &context.session_state
+            && data.has_performed_hsm_operation
+        {
+            return Err(ServiceRequestError::InvalidOperation);
+        }
+
         let data = context
             .inner_request
             .data
@@ -89,7 +104,7 @@ impl ServiceOperation for HsmGenerateKeyOperation {
                 public_key: hsm_key.public_key_jwk,
             })?,
             session_id: context.session_id,
-            session_transition: None,
+            session_transition: Some(SessionTransition::MarkHsmOperationPerformed),
         })
     }
 }
@@ -98,6 +113,13 @@ pub struct HsmDeleteKeyOperation;
 
 impl ServiceOperation for HsmDeleteKeyOperation {
     fn execute(&self, context: OperationContext) -> Result<OperationResult, ServiceRequestError> {
+        // Only allow one HSM mutating operation per session
+        if let Some(SessionState::Active(data)) = &context.session_state
+            && data.has_performed_hsm_operation
+        {
+            return Err(ServiceRequestError::InvalidOperation);
+        }
+
         let data = context
             .inner_request
             .data
@@ -114,7 +136,7 @@ impl ServiceOperation for HsmDeleteKeyOperation {
                 hsm_kid: payload.hsm_kid,
             })?,
             session_id: context.session_id,
-            session_transition: None,
+            session_transition: Some(SessionTransition::MarkHsmOperationPerformed),
         })
     }
 }
