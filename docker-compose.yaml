@@ -2,30 +2,30 @@ name: r2ps-dev
 
 services:
 
-  r2ps-rest-api:
+  wallet-bff:
     build:
-      context: .
-      dockerfile: ./r2ps-rest-api/Containerfile
+      context: ./wallet-bff
+      dockerfile: Containerfile
     ports:
       - "8088:8088"
-      - "9012:8000"
     restart: on-failure
     depends_on:
-      kafka-1:
-        condition: service_healthy
-      kafka-2:
-        condition: service_healthy
-      kafka-3:
-        condition: service_healthy
+      init-kafka:
+        condition: service_completed_successfully
     environment:
-      SPRING_KAFKA_BOOTSTRAP_SERVERS: "kafka-1:19092,kafka-2:19092,kafka-3:19092"
-      SPRING_DATA_REDIS_HOST: "valkey"
-      SPRING_DATA_REDIS_PORT: 6379
-      SPRING_DATA_REDIS_USERNAME: "default"
-      SPRING_DATA_REDIS_PASSWORD: "secret"
-      SPRING_DATA_REDIS_DATABASE: 0
-      TZ: "Europe/Stockholm"
-    env_file: .env
+      KAFKA_BOOTSTRAP_SERVERS: "kafka-1:19092,kafka-2:19092,kafka-3:19092"
+      KAFKA_BROKER_ADDRESS_FAMILY: "v4"
+      KAFKA_GROUP_ID: "r2ps-rest-api-group"
+      REDIS_HOST: "valkey"
+      REDIS_PORT: 6379
+      REDIS_USERNAME: "default"
+      REDIS_PASSWORD: "secret"
+      REDIS_DATABASE: 0
+      SERVER_PORT: 8088
+      SERVE_SYNC: "true"
+      SYNC_TIMEOUT_MS: 3000
+      RESPONSE_TTL_SECONDS: 600
+      RUST_LOG: "wallet_bff=info,rdkafka=warn,redis=warn"
     networks:
       - wallet-network
 

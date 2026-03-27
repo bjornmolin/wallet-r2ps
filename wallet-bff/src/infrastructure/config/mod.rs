@@ -1,0 +1,74 @@
+use config::{Config, ConfigError, Environment};
+use serde::Deserialize;
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct AppConfig {
+    /// Kafka bootstrap servers (comma-separated)
+    pub kafka_bootstrap_servers: String,
+    /// Kafka consumer group ID
+    pub kafka_group_id: String,
+    /// Kafka broker address family (v4/v6)
+    pub kafka_broker_address_family: String,
+
+    /// Redis host
+    pub redis_host: String,
+    /// Redis port
+    pub redis_port: u16,
+    /// Redis username
+    pub redis_username: String,
+    /// Redis password
+    pub redis_password: String,
+    /// Redis database index
+    pub redis_database: u8,
+
+    /// HTTP server bind host
+    pub server_host: String,
+    /// HTTP server port
+    pub server_port: u16,
+
+    /// Enable synchronous response support (wait for Kafka reply inline)
+    pub serve_sync: bool,
+    /// Max milliseconds to wait for a synchronous response
+    pub sync_timeout_ms: u64,
+    /// Response cache TTL in seconds
+    pub response_ttl_seconds: u64,
+    /// URL template for the polling endpoint (%s = correlationId)
+    pub response_events_template_url: String,
+}
+
+impl AppConfig {
+    pub fn new() -> Result<Self, ConfigError> {
+        dotenvy::dotenv().ok();
+        Config::builder()
+            .set_default("kafka_group_id", "r2ps-rest-api-group")?
+            .set_default("kafka_broker_address_family", "v4")?
+            .set_default("redis_host", "localhost")?
+            .set_default("redis_port", 6379)?
+            .set_default("redis_username", "default")?
+            .set_default("redis_password", "secret")?
+            .set_default("redis_database", 0)?
+            .set_default("server_host", "0.0.0.0")?
+            .set_default("server_port", 8088)?
+            .set_default("serve_sync", true)?
+            .set_default("sync_timeout_ms", 3000)?
+            .set_default("response_ttl_seconds", 600)?
+            .set_default(
+                "response_events_template_url",
+                "http://localhost:8088/hsm/v1/requests/%s",
+            )?
+            .add_source(Environment::default())
+            .build()?
+            .try_deserialize()
+    }
+
+    pub fn redis_url(&self) -> String {
+        format!(
+            "redis://{}:{}@{}:{}/{}",
+            self.redis_username,
+            self.redis_password,
+            self.redis_host,
+            self.redis_port,
+            self.redis_database,
+        )
+    }
+}
