@@ -1,4 +1,7 @@
 pub mod client_metadata;
+
+#[cfg(test)]
+mod client_metadata_tests;
 pub mod hsm;
 pub mod r2ps;
 pub mod state_initialization;
