@@ -4,7 +4,7 @@ use serde_json::{Map, Value, json};
 use std::fmt;
 
 /// Errors only reported to the calling microservice — nothing sent to client.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum UpstreamError {
     InvalidStateJws,
     OuterJwsInvalid,
@@ -15,7 +15,7 @@ pub enum UpstreamError {
 
 /// Errors sent to the client in the (unencrypted) outer response.
 /// Safe to expose because they reveal nothing about inner content.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum OuterError {
     InnerJweMissing,
     InnerJweHeaderInvalid,
@@ -27,7 +27,7 @@ pub enum OuterError {
 
 /// An error tagged by who can see it on the return path.
 /// The variant itself is the visibility — no separate routing needed.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum WorkerError {
     /// Microservice only — client receives nothing.
     Upstream(UpstreamError),
