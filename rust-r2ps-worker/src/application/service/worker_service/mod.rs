@@ -4,6 +4,12 @@ pub mod error;
 pub mod response;
 
 #[cfg(test)]
+mod decode_tests;
+#[cfg(test)]
+mod response_tests;
+#[cfg(test)]
+pub(crate) mod test_utils;
+#[cfg(test)]
 mod tests;
 
 pub use context::{ResponseContext, WorkerInput};
@@ -175,4 +181,29 @@ impl WorkerService {
                 context: Some(Box::new(full_response_context)),
             })
     }
+}
+
+#[cfg(test)]
+fn setup_crypto() -> (
+    Arc<dyn jose_port::JosePort>,
+    josekit::jws::alg::ecdsa::EcdsaJwsVerifier,
+) {
+    use crate::infrastructure::adapters::outgoing::jose_adapter::JoseAdapter;
+    use p256::SecretKey;
+    use p256::pkcs8::EncodePrivateKey;
+    use spki::EncodePublicKey;
+
+    let secret_key = SecretKey::random(&mut rand::thread_rng());
+    let private_pem_string = secret_key.to_pkcs8_pem(Default::default()).unwrap();
+    let public_key_pem = secret_key
+        .public_key()
+        .to_public_key_pem(Default::default())
+        .unwrap();
+    let server_private_key = pem::parse(private_pem_string.as_bytes()).unwrap();
+    let server_public_key = pem::parse(public_key_pem.as_bytes()).unwrap();
+    let jose = Arc::new(JoseAdapter::new(&server_public_key, &server_private_key).unwrap());
+    let verifier = josekit::jws::ES256
+        .verifier_from_pem(public_key_pem.as_bytes())
+        .unwrap();
+    (jose, verifier)
 }
