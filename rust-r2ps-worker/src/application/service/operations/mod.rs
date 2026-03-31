@@ -2,6 +2,11 @@ pub mod authentication;
 pub mod hsm;
 pub mod session;
 
+#[cfg(test)]
+mod authentication_tests;
+#[cfg(test)]
+mod hsm_tests;
+
 use crate::application::hsm_spi_port::HsmSpiPort;
 use crate::application::port::outgoing::pake_port::PakePort;
 use crate::application::port::outgoing::session_state_spi_port::SessionState;
