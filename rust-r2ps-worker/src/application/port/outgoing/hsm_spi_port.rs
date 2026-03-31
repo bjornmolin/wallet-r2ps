@@ -15,6 +15,7 @@ pub struct EcKeyPairRecord {
     pub private_key_data: Vec<u8>,
 }
 
+#[cfg_attr(test, mockall::automock)]
 pub trait HsmSpiPort {
     fn generate_key(
         &self,

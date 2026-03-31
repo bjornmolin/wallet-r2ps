@@ -106,7 +106,11 @@ impl JosePort for JoseAdapter {
             .map(|s| s.to_string()))
     }
 
-    fn jwe_encrypt(&self, payload: &[u8], key: JweEncryptionKey<'_>) -> Result<String, JoseError> {
+    fn jwe_encrypt<'a>(
+        &self,
+        payload: &[u8],
+        key: JweEncryptionKey<'a>,
+    ) -> Result<String, JoseError> {
         match key {
             JweEncryptionKey::Session(session_key) => {
                 let mut header = JweHeader::new();
@@ -142,7 +146,11 @@ impl JosePort for JoseAdapter {
         }
     }
 
-    fn jwe_decrypt(&self, jwe_str: &str, key: JweDecryptionKey<'_>) -> Result<Vec<u8>, JoseError> {
+    fn jwe_decrypt<'a>(
+        &self,
+        jwe_str: &str,
+        key: JweDecryptionKey<'a>,
+    ) -> Result<Vec<u8>, JoseError> {
         match key {
             JweDecryptionKey::Device => {
                 let decrypter = ECDH_ES

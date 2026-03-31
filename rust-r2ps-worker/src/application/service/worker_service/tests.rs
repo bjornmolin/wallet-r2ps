@@ -1,5 +1,8 @@
 use crate::application::WorkerPorts;
 use crate::application::WorkerRequestUseCase;
+use crate::application::hsm_spi_port::MockHsmSpiPort;
+use crate::application::port::outgoing::pake_port::MockPakePort;
+use crate::application::port::outgoing::session_state_spi_port::PendingLoginState;
 use crate::application::service::worker_service::WorkerService;
 use crate::application::service::worker_service::test_utils::*;
 use crate::application::session_state_spi_port::SessionKey;
@@ -116,11 +119,20 @@ fn test_execute_returns_internal_server_error_response_when_transition_fails() {
         session_state: Arc::new(MockSessionStateTransitionErrorSpi {
             key: SessionKey::new(vec![9u8; 32]),
         }),
-        hsm: Arc::new(MockHsmSpi),
+        hsm: Arc::new(MockHsmSpiPort::new()),
         worker_response: mock_response_port.clone(),
-        pake: Arc::new(MockPake {
-            auth_start_succeeds: true,
-        }),
+        pake: {
+            let mut mock = MockPakePort::new();
+            mock.expect_authentication_start()
+                .once()
+                .returning(|_, _, _| {
+                    Ok((
+                        PakePayloadVector::new(vec![0xAA]),
+                        PendingLoginState::new(vec![0xBB]),
+                    ))
+                });
+            Arc::new(mock)
+        },
     };
     let service = WorkerService::new(jose.clone(), ports);
 

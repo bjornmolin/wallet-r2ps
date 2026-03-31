@@ -21,11 +21,16 @@ pub enum JweDecryptionKey<'a> {
     Session(&'a SessionKey),
 }
 
+#[cfg_attr(test, mockall::automock)]
 pub trait JosePort: Send + Sync {
     fn jws_sign(&self, payload_json: &[u8]) -> Result<String, JoseError>;
     fn jws_verify_server(&self, jws: &str) -> Result<Vec<u8>, JoseError>;
     fn jws_verify_device(&self, jws: &str, key: &EcPublicJwk) -> Result<Vec<u8>, JoseError>;
-    fn jwe_encrypt(&self, payload: &[u8], key: JweEncryptionKey<'_>) -> Result<String, JoseError>;
-    fn jwe_decrypt(&self, jwe: &str, key: JweDecryptionKey<'_>) -> Result<Vec<u8>, JoseError>;
+    fn jwe_encrypt<'a>(
+        &self,
+        payload: &[u8],
+        key: JweEncryptionKey<'a>,
+    ) -> Result<String, JoseError>;
+    fn jwe_decrypt<'a>(&self, jwe: &str, key: JweDecryptionKey<'a>) -> Result<Vec<u8>, JoseError>;
     fn peek_kid(&self, compact: &str) -> Result<Option<String>, JoseError>;
 }

@@ -1,6 +1,4 @@
-use crate::application::port::outgoing::jose_port::{
-    JoseError, JosePort, JweDecryptionKey, JweEncryptionKey,
-};
+use crate::application::port::outgoing::jose_port::{JoseError, MockJosePort};
 use crate::application::port::outgoing::state_init_response_spi_port::{
     StateInitResponseError, StateInitResponseSpiPort,
 };
@@ -24,39 +22,6 @@ impl StateInitResponseSpiPort for MockStateInitResponseSpi {
         }
         self.responses.lock().unwrap().push(response);
         Ok(())
-    }
-}
-
-struct MockJosePort {
-    pub fail_sign: bool,
-}
-
-impl JosePort for MockJosePort {
-    fn jws_sign(&self, _payload_json: &[u8]) -> Result<String, JoseError> {
-        if self.fail_sign {
-            return Err(JoseError::SignError);
-        }
-        // Mock a successful JWS signature encoding
-        Ok("mocked.jws.signature".to_string())
-    }
-    fn jws_verify_server(&self, _jws: &str) -> Result<Vec<u8>, JoseError> {
-        unimplemented!()
-    }
-    fn jws_verify_device(&self, _jws: &str, _key: &EcPublicJwk) -> Result<Vec<u8>, JoseError> {
-        unimplemented!()
-    }
-    fn jwe_encrypt(
-        &self,
-        _payload: &[u8],
-        _key: JweEncryptionKey<'_>,
-    ) -> Result<String, JoseError> {
-        unimplemented!()
-    }
-    fn jwe_decrypt(&self, _jwe: &str, _key: JweDecryptionKey<'_>) -> Result<Vec<u8>, JoseError> {
-        unimplemented!()
-    }
-    fn peek_kid(&self, _compact: &str) -> Result<Option<String>, JoseError> {
-        unimplemented!()
     }
 }
 
@@ -84,8 +49,11 @@ fn test_valid_initialization_pipeline() {
         responses: Mutex::new(Vec::new()),
         fail: false,
     });
-    let mock_jose = Arc::new(MockJosePort { fail_sign: false });
-    let service = StateInitService::new(mock_spi.clone(), mock_jose);
+    let mut mock_jose = MockJosePort::new();
+    mock_jose
+        .expect_jws_sign()
+        .returning(|_| Ok("mocked.jws.signature".to_string()));
+    let service = StateInitService::new(mock_spi.clone(), Arc::new(mock_jose));
 
     let request = StateInitRequest {
         request_id: "test-req-123".to_string(),
@@ -115,8 +83,11 @@ fn test_initialization_fails_on_signing_error() {
         fail: false,
     });
     // Simulate a failure in the Jose signing engine
-    let mock_jose = Arc::new(MockJosePort { fail_sign: true });
-    let service = StateInitService::new(mock_spi.clone(), mock_jose);
+    let mut mock_jose = MockJosePort::new();
+    mock_jose
+        .expect_jws_sign()
+        .returning(|_| Err(JoseError::SignError));
+    let service = StateInitService::new(mock_spi.clone(), Arc::new(mock_jose));
 
     let request = StateInitRequest {
         request_id: "test-req-123".to_string(),
@@ -139,8 +110,11 @@ fn test_initialization_fails_on_spi_send_error() {
         responses: Mutex::new(Vec::new()),
         fail: true,
     });
-    let mock_jose = Arc::new(MockJosePort { fail_sign: false });
-    let service = StateInitService::new(mock_spi.clone(), mock_jose);
+    let mut mock_jose = MockJosePort::new();
+    mock_jose
+        .expect_jws_sign()
+        .returning(|_| Ok("mocked.jws.signature".to_string()));
+    let service = StateInitService::new(mock_spi.clone(), Arc::new(mock_jose));
 
     let request = StateInitRequest {
         request_id: "test-req-123".to_string(),
@@ -172,8 +146,7 @@ fn test_strict_jwk_validation_rejection(
         responses: Mutex::new(Vec::new()),
         fail: false,
     });
-    let mock_jose = Arc::new(MockJosePort { fail_sign: false });
-    let service = StateInitService::new(mock_spi.clone(), mock_jose);
+    let service = StateInitService::new(mock_spi.clone(), Arc::new(MockJosePort::new()));
 
     let request = StateInitRequest {
         request_id: "test-req-123".to_string(),
