@@ -54,6 +54,27 @@ mod tests {
         }
     }
 
+    struct MockHsmSpiBadBytes;
+
+    impl HsmSpiPort for MockHsmSpiBadBytes {
+        fn generate_key(
+            &self,
+            _label: &str,
+            _curve: &Curve,
+        ) -> Result<HsmKey, Box<dyn std::error::Error>> {
+            unimplemented!()
+        }
+
+        fn sign(
+            &self,
+            _key: &HsmKey,
+            _sign_payload: &[u8],
+        ) -> Result<Vec<u8>, cryptoki::error::Error> {
+            // Return wrong-length bytes — p256::ecdsa::Signature::from_slice requires exactly 64
+            Ok(vec![0xAB; 10])
+        }
+    }
+
     // -----------------------------------------------------------------------------
     // Helpers
     // -----------------------------------------------------------------------------
@@ -212,6 +233,31 @@ mod tests {
 
         // 2. Verify HSM was NOT called
         assert!(!*mock_hsm.sign_called.lock().unwrap());
+    }
+
+    #[test]
+    fn hsm_sign_returns_unknown_when_hsm_returns_non_p256_signature_bytes() {
+        let op = HsmSignOperation::new(Arc::new(MockHsmSpiBadBytes));
+
+        let mut state = initial_state();
+        state.hsm_keys.push(make_hsm_key("hsm-key-1"));
+
+        let payload = SignRequest {
+            hsm_kid: "hsm-key-1".to_string(),
+            message: MessageVector::new(vec![1, 2, 3, 4]),
+        };
+        let inner_request = InnerRequest {
+            version: 1,
+            request_type: crate::domain::OperationId::HsmSign,
+            request_counter: 0,
+            data: Some(serde_json::to_string(&payload).unwrap()),
+        };
+
+        let context = create_mock_context(state, inner_request);
+
+        let result = op.execute(context);
+
+        assert!(matches!(result, Err(ServiceRequestError::Unknown)));
     }
 
     #[test]
