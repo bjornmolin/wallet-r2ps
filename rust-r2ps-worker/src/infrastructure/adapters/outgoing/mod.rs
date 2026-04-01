@@ -7,3 +7,6 @@ pub mod state_init_response_kafka_sender;
 
 #[cfg(test)]
 mod session_state_memory_cache_tests;
+
+#[cfg(test)]
+mod jose_adapter_tests;

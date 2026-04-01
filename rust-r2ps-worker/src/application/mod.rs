@@ -5,6 +5,9 @@ pub mod port;
 pub mod protocol;
 pub mod service;
 
+#[cfg(test)]
+mod protocol_tests;
+
 pub use config::*;
 pub use port::WorkerPorts;
 pub use port::incoming::worker_request_use_case::*;
