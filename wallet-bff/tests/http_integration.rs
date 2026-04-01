@@ -180,6 +180,8 @@ fn ok_state_init_response() -> StateInitResponse {
         request_id: "any-id".to_string(),
         state_jws: "mock-state-jws".to_string(),
         dev_authorization_code: "abc123".to_string(),
+        server_jws_public_key: None,
+        opaque_server_id: None,
     }
 }
 

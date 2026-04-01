@@ -27,3 +27,5 @@ utoipa-swagger-ui = { version = "9", features = ["axum"] }
 [dev-dependencies]
 rstest = "0.23"
 tower = { version = "0.5", features = ["util"] }
+testcontainers = "0.27"
+testcontainers-modules = { version = "0.15", features = ["kafka", "valkey"] }

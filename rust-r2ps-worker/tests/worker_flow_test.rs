@@ -7,8 +7,8 @@ use mockall::mock;
 use p256::SecretKey;
 use p256::elliptic_curve::sec1::ToEncodedPoint;
 use p256::pkcs8::{EncodePrivateKey, EncodePublicKey};
-use rust_r2ps_worker::application::WorkerPorts;
 use rust_r2ps_worker::application::JosePort;
+use rust_r2ps_worker::application::WorkerPorts;
 use rust_r2ps_worker::application::WorkerRequestUseCase;
 use rust_r2ps_worker::application::port::outgoing::hsm_spi_port::{DerivedSecret, HsmSpiPort};
 use rust_r2ps_worker::application::port::outgoing::pake_port::{

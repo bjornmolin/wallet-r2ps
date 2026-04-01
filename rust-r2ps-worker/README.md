@@ -116,6 +116,29 @@ Then build and run the rust-r2ps-worker with:
 cargo run
 ```
 
+## Testing
+
+### Unit tests
+
+```bash
+cargo test
+```
+
+### Integration tests (Tier 2)
+
+Integration tests use [testcontainers](https://crates.io/crates/testcontainers) to spin up real Kafka containers. They are gated with `#[ignore]` and require Docker.
+
+```bash
+# Run all integration tests (serial — shared topic names)
+cargo test -- --ignored --test-threads=1
+
+# Run a single integration test
+cargo test -- --ignored test_worker_kafka_round_trip
+
+# Run all tests (unit + integration) in one go
+cargo test -- --include-ignored --test-threads=1
+```
+
 ## Docs and openapi
 
 Generate [./docs/domain-model.html](./docs/book/book/introduction.html) and [./openapi.json](./openapi.json)
