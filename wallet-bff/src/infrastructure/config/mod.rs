@@ -30,6 +30,8 @@ pub struct AppConfig {
     pub serve_sync: bool,
     /// Max milliseconds to wait for a synchronous response
     pub sync_timeout_ms: u64,
+    /// Max milliseconds to wait for a state-init response
+    pub state_init_timeout_ms: u64,
     /// Response cache TTL in seconds
     pub response_ttl_seconds: u64,
     /// URL template for the polling endpoint (%s = correlationId)
@@ -51,6 +53,7 @@ impl AppConfig {
             .set_default("server_port", 8088)?
             .set_default("serve_sync", true)?
             .set_default("sync_timeout_ms", 3000)?
+            .set_default("state_init_timeout_ms", 5000)?
             .set_default("response_ttl_seconds", 600)?
             .set_default(
                 "response_events_template_url",

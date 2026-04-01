@@ -82,6 +82,7 @@ pub async fn run() {
         state_init_cache,
         serve_sync: config.serve_sync,
         sync_timeout_ms: config.sync_timeout_ms,
+        state_init_timeout_ms: config.state_init_timeout_ms,
         response_events_template_url: config.response_events_template_url.clone(),
     });
 
