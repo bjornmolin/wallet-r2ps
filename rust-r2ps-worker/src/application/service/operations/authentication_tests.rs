@@ -177,6 +177,7 @@ fn test_authenticate_finish_wrong_state_active_fails() {
         session_key: SessionKey::new(vec![1]),
         purpose: None,
         operation: None,
+        has_performed_hsm_operation: false,
     }));
 
     let result = op.execute(context);

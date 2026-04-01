@@ -5,6 +5,15 @@ use crate::application::port::outgoing::session_state_spi_port::{
 use crate::domain::SessionId;
 use crate::infrastructure::adapters::outgoing::session_state_memory_cache::SessionStateMemoryCache;
 
+type CacheFactory = fn() -> (SessionStateMemoryCache, SessionId);
+type ValidCase = (
+    &'static str,
+    CacheFactory,
+    SessionTransition,
+    Box<dyn Fn(Option<SessionState>)>,
+);
+type InvalidCase = (&'static str, CacheFactory, SessionTransition);
+
 fn create_pending_auth() -> SessionTransition {
     SessionTransition::CreatePendingAuth {
         pending_state: PendingLoginState::new(vec![1, 2]),
@@ -60,12 +69,7 @@ fn seeded_active_hsm_op_done() -> (SessionStateMemoryCache, SessionId) {
 
 #[test]
 fn valid_transitions() {
-    let cases: &[(
-        &str,
-        fn() -> (SessionStateMemoryCache, SessionId),
-        SessionTransition,
-        Box<dyn Fn(Option<SessionState>)>,
-    )] = &[
+    let cases: &[ValidCase] = &[
         (
             "None + CreatePendingAuth → PendingAuth",
             || (SessionStateMemoryCache::new(), SessionId::new()),
@@ -147,11 +151,7 @@ fn valid_transitions() {
 
 #[test]
 fn invalid_transitions() {
-    let cases: &[(
-        &str,
-        fn() -> (SessionStateMemoryCache, SessionId),
-        SessionTransition,
-    )] = &[
+    let cases: &[InvalidCase] = &[
         // CreatePendingAuth requires no existing session
         (
             "PendingAuth + CreatePendingAuth",
