@@ -86,7 +86,7 @@ pub struct LoadTestArgs {
     pub duration_secs: u64,
 
     /// Number of HSM sign operations per authentication cycle
-    #[arg(long, default_value = "5")]
+    #[arg(long, default_value = "1")]
     pub signs_per_cycle: usize,
 
     /// Stats reporting interval in seconds

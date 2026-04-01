@@ -83,7 +83,7 @@ Runs concurrent worker tasks that each repeatedly:
 
 1. Pick a random client from the test data
 2. Create an OPAQUE session (authenticate_start + authenticate_finish)
-3. Perform N HSM sign operations
+3. Perform HSM sign operation
 4. Repeat with a new random client
 
 ```bash
@@ -93,8 +93,7 @@ cargo run --release -- load-test \
   --test-data test-data.json.gz \
   -t 8 \
   --mean-delay-ms 100 \
-  -d 60 \
-  --signs-per-cycle 5
+  -d 60
 ```
 
 #### Options
@@ -107,7 +106,7 @@ cargo run --release -- load-test \
 | `-t, --threads` | `4` | Number of concurrent worker tasks |
 | `--mean-delay-ms` | `100` | Mean inter-request delay per worker in ms (0 = burst) |
 | `-d, --duration-secs` | `60` | Test duration in seconds (0 = unlimited) |
-| `--signs-per-cycle` | `5` | HSM sign operations per authentication cycle |
+| `--signs-per-cycle` | `1` | HSM sign operations per authentication cycle. **Warning:** values > 1 will not work in the future — the worker will enforce a maximum of one sign operation per session. |
 | `--stats-interval-secs` | `5` | How often to print stats summary |
 
 #### Traffic shaping
@@ -158,7 +157,7 @@ cargo run --release -- load-test \
   --bff-url http://localhost:8088 \
   --server-pubkey-pem server-pubkey.pem \
   --test-data smoke-test.json.gz \
-  -t 2 -d 10 --signs-per-cycle 3
+  -t 2 -d 10
 ```
 
 ### High-throughput burst test
@@ -175,7 +174,7 @@ cargo run --release -- load-test \
   --bff-url http://localhost:8088 \
   --server-pubkey-pem server-pubkey.pem \
   --test-data large-dataset.json.gz \
-  -t 32 --mean-delay-ms 0 -d 120 --signs-per-cycle 10
+  -t 32 --mean-delay-ms 0 -d 120
 ```
 
 ### Steady-state rate-limited test
