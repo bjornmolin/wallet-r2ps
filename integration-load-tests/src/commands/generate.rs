@@ -28,7 +28,7 @@ use crate::protocol::types::EcPublicJwk;
 
 pub async fn run(args: GenerateArgs) -> Result<()> {
     let server_pubkey = load_server_public_key_pem(&args.server_pubkey_pem)?;
-    let rest = Arc::new(RestClient::new(&args.bff_url)?);
+    let rest: Arc<RestClient> = Arc::new(RestClient::new(&args.bff_url)?);
     let semaphore = Arc::new(Semaphore::new(args.concurrency));
 
     println!(
@@ -47,7 +47,7 @@ pub async fn run(args: GenerateArgs) -> Result<()> {
 
         let handle = tokio::spawn(async move {
             let _permit = sem.acquire().await.unwrap();
-            generate_one_client(&rest, &server_pk, &args, i).await
+            generate_one_client(rest, &server_pk, &args, i).await
         });
         handles.push(handle);
     }
@@ -93,7 +93,7 @@ pub async fn run(args: GenerateArgs) -> Result<()> {
 }
 
 async fn generate_one_client(
-    rest: &RestClient,
+    rest: Arc<RestClient>,
     server_pubkey: &josekit::jwk::Jwk,
     args: &GenerateArgs,
     index: usize,
@@ -114,6 +114,7 @@ async fn generate_one_client(
     };
 
     let am = AccessMechanismClient::new(
+        rest,
         server_pubkey.clone(),
         device_jwk,
         device_key.kid.clone(),
@@ -123,22 +124,20 @@ async fn generate_one_client(
     );
 
     // 2. Init state
-    let (client_id, auth_code) = am.init_state(rest, &public_key, &args.ttl).await?;
+    let (client_id, auth_code) = am.init_state(&public_key, &args.ttl).await?;
     tracing::debug!("Client {}: initialized, client_id={}", index, client_id);
 
     // 3. Register PIN
-    let _export_key = am
-        .register_pin(rest, &args.pin, &client_id, &auth_code)
-        .await?;
+    let _export_key = am.register_pin(&args.pin, &client_id, &auth_code).await?;
     tracing::debug!("Client {}: PIN registered", index);
 
     // 4. Create session (login)
-    let (session_key, session_id) = am.create_session(rest, &args.pin, &client_id).await?;
+    let (session_key, session_id) = am.create_session(&args.pin, &client_id).await?;
     tracing::debug!("Client {}: session created", index);
 
     // 5. Generate HSM key
     let hsm_kid = am
-        .hsm_generate_key(rest, &session_key, &session_id, &client_id)
+        .hsm_generate_key(&session_key, &session_id, &client_id)
         .await?;
     tracing::debug!("Client {}: HSM key generated, kid={}", index, hsm_kid);
 

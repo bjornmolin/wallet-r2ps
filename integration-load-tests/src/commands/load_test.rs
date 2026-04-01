@@ -27,7 +27,7 @@ use crate::client::access_mechanism::{
     build_device_jwk, load_server_public_key_pem, AccessMechanismClient,
 };
 use crate::client::rest_client::RestClient;
-use crate::model::test_data::{ClientTestData, TestDataEnvelope};
+use crate::model::test_data::TestDataEnvelope;
 use crate::stats::Stats;
 
 pub async fn run(args: LoadTestArgs) -> Result<()> {
@@ -142,7 +142,7 @@ async fn worker_loop(
     running: &AtomicBool,
 ) {
     let rest = match RestClient::new(&args.bff_url) {
-        Ok(r) => r,
+        Ok(r) => Arc::new(r),
         Err(e) => {
             eprintln!(
                 "[worker {}] Failed to create REST client: {:#}",
@@ -152,30 +152,46 @@ async fn worker_loop(
         }
     };
 
-    while running.load(Ordering::Relaxed) {
-        // Pick a random client
-        let client_idx = rand::thread_rng().gen_range(0..envelope.clients.len());
-        let client = &envelope.clients[client_idx];
+    // Pre-build one AccessMechanismClient per test client — avoids JWK JSON
+    // round-trips and string allocations in the hot loop.
+    let clients: Vec<(AccessMechanismClient, String, String, String)> = match envelope
+        .clients
+        .iter()
+        .map(|c| {
+            let device_jwk =
+                build_device_jwk(&c.device_key.x, &c.device_key.y, &c.device_key.d, &c.kid)?;
+            let am = AccessMechanismClient::new(
+                Arc::clone(&rest),
+                server_pubkey.clone(),
+                device_jwk,
+                c.kid.clone(),
+                c.pin_stretch_d.clone(),
+                envelope.opaque_context.clone(),
+                envelope.opaque_server_identifier.clone(),
+            );
+            Ok((am, c.pin.clone(), c.client_id.clone(), c.hsm_kid.clone()))
+        })
+        .collect::<Result<Vec<_>>>()
+    {
+        Ok(v) => v,
+        Err(e) => {
+            eprintln!("[worker {}] Failed to build client pool: {:#}", worker_id, e);
+            return;
+        }
+    };
 
-        match run_one_cycle(
-            worker_id,
-            client,
-            envelope,
-            server_pubkey,
-            args,
-            &rest,
-            stats,
-            running,
-        )
-        .await
-        {
+    while running.load(Ordering::Relaxed) {
+        let idx = rand::thread_rng().gen_range(0..clients.len());
+        let (am, pin, client_id, hsm_kid) = &clients[idx];
+
+        match run_one_cycle(am, pin, client_id, hsm_kid, args, stats, running).await {
             Ok(()) => {}
             Err(e) => {
                 stats.record_auth_error();
                 eprintln!(
                     "[worker {}] cycle error for client {}...: {:#}",
                     worker_id,
-                    &client.kid[..12.min(client.kid.len())],
+                    &client_id[..12.min(client_id.len())],
                     e
                 );
                 // Brief back-off before retrying
@@ -186,37 +202,18 @@ async fn worker_loop(
 }
 
 async fn run_one_cycle(
-    _worker_id: usize,
-    client: &ClientTestData,
-    envelope: &TestDataEnvelope,
-    server_pubkey: &josekit::jwk::Jwk,
+    am: &AccessMechanismClient,
+    pin: &str,
+    client_id: &str,
+    hsm_kid: &str,
     args: &LoadTestArgs,
-    rest: &RestClient,
     stats: &Stats,
     running: &AtomicBool,
 ) -> Result<()> {
-    let device_jwk = build_device_jwk(
-        &client.device_key.x,
-        &client.device_key.y,
-        &client.device_key.d,
-        &client.device_key.kid,
-    )?;
-
-    let am = AccessMechanismClient::new(
-        server_pubkey.clone(),
-        device_jwk,
-        client.kid.clone(),
-        client.pin_stretch_d.clone(),
-        envelope.opaque_context.clone(),
-        envelope.opaque_server_identifier.clone(),
-    );
-
     // 1. OPAQUE login (create session)
     poisson_delay(args.mean_delay_ms).await;
     let t0 = Instant::now();
-    let (session_key, session_id) = am
-        .create_session(rest, &client.pin, &client.client_id)
-        .await?;
+    let (session_key, session_id) = am.create_session(pin, client_id).await?;
     stats.record_latency(t0.elapsed().as_millis() as u64);
     stats.record_auth_cycle();
 
@@ -230,17 +227,7 @@ async fn run_one_cycle(
 
         let message: [u8; 32] = rand::thread_rng().gen();
         let t_sign = Instant::now();
-        match am
-            .hsm_sign(
-                rest,
-                &session_key,
-                &session_id,
-                &client.client_id,
-                &client.hsm_kid,
-                &message,
-            )
-            .await
-        {
+        match am.hsm_sign(&session_key, &session_id, client_id, hsm_kid, &message).await {
             Ok(_) => {
                 stats.record_latency(t_sign.elapsed().as_millis() as u64);
             }

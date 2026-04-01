@@ -9,6 +9,7 @@ use anyhow::{bail, Context, Result};
 use base64::engine::general_purpose::STANDARD;
 use base64::Engine;
 use josekit::jwk::Jwk;
+use std::sync::Arc;
 
 use crate::crypto::{opaque_client, pin_stretch};
 use crate::protocol::message_builder::{build_pake_request_jws, build_session_request_jws};
@@ -21,6 +22,7 @@ use crate::protocol::types::{
 use super::rest_client::RestClient;
 
 pub struct AccessMechanismClient {
+    rest: Arc<RestClient>,
     server_public_key: Jwk,
     device_private_key: Jwk,
     kid: String,
@@ -31,6 +33,7 @@ pub struct AccessMechanismClient {
 
 impl AccessMechanismClient {
     pub fn new(
+        rest: Arc<RestClient>,
         server_public_key: Jwk,
         device_private_key: Jwk,
         kid: String,
@@ -39,6 +42,7 @@ impl AccessMechanismClient {
         opaque_server_identifier: String,
     ) -> Self {
         Self {
+            rest,
             server_public_key,
             device_private_key,
             kid,
@@ -52,7 +56,6 @@ impl AccessMechanismClient {
     /// Returns (client_id, authorization_code).
     pub async fn init_state(
         &self,
-        rest: &RestClient,
         public_key: &EcPublicJwk,
         ttl: &str,
     ) -> Result<(String, String)> {
@@ -61,7 +64,7 @@ impl AccessMechanismClient {
             ttl: Some(ttl.to_string()),
         };
 
-        let resp = rest.create_device_state(&request).await?;
+        let resp = self.rest.create_device_state(&request).await?;
         let client_id = resp.client_id;
         let auth_code = resp
             .dev_authorization_code
@@ -74,7 +77,6 @@ impl AccessMechanismClient {
     /// Returns the export key.
     pub async fn register_pin(
         &self,
-        rest: &RestClient,
         pin: &str,
         client_id: &str,
         auth_code: &str,
@@ -97,7 +99,7 @@ impl AccessMechanismClient {
             &self.device_private_key,
             &self.kid,
         )?;
-        let resp = rest.submit_request(client_id, &jws).await?;
+        let resp = self.rest.submit_request(client_id, &jws).await?;
         if resp.status != "complete" {
             bail!("Registration start failed: {:?}", resp);
         }
@@ -136,7 +138,7 @@ impl AccessMechanismClient {
             &self.device_private_key,
             &self.kid,
         )?;
-        let resp = rest.submit_request(client_id, &jws).await?;
+        let resp = self.rest.submit_request(client_id, &jws).await?;
         if resp.status != "complete" {
             bail!("Registration finish failed: {:?}", resp);
         }
@@ -148,7 +150,6 @@ impl AccessMechanismClient {
     /// Returns (session_key, session_id).
     pub async fn create_session(
         &self,
-        rest: &RestClient,
         pin: &str,
         client_id: &str,
     ) -> Result<(Vec<u8>, String)> {
@@ -170,7 +171,7 @@ impl AccessMechanismClient {
             &self.device_private_key,
             &self.kid,
         )?;
-        let resp = rest.submit_request(client_id, &jws).await?;
+        let resp = self.rest.submit_request(client_id, &jws).await?;
         if resp.status != "complete" {
             bail!("Login start failed: {:?}", resp);
         }
@@ -212,7 +213,7 @@ impl AccessMechanismClient {
             &self.device_private_key,
             &self.kid,
         )?;
-        let resp = rest.submit_request(client_id, &jws).await?;
+        let resp = self.rest.submit_request(client_id, &jws).await?;
         if resp.status != "complete" {
             bail!("Login finish failed: {:?}", resp);
         }
@@ -223,7 +224,6 @@ impl AccessMechanismClient {
     /// Generate an HSM key. Returns the hsm_kid.
     pub async fn hsm_generate_key(
         &self,
-        rest: &RestClient,
         session_key: &[u8],
         session_id: &str,
         client_id: &str,
@@ -240,7 +240,7 @@ impl AccessMechanismClient {
             &self.device_private_key,
             &self.kid,
         )?;
-        let resp = rest.submit_request(client_id, &jws).await?;
+        let resp = self.rest.submit_request(client_id, &jws).await?;
         if resp.status != "complete" {
             bail!("HSM generate key failed: {:?}", resp);
         }
@@ -268,7 +268,6 @@ impl AccessMechanismClient {
     /// Sign with an HSM key. Returns the result JWS from the server.
     pub async fn hsm_sign(
         &self,
-        rest: &RestClient,
         session_key: &[u8],
         session_id: &str,
         client_id: &str,
@@ -288,7 +287,7 @@ impl AccessMechanismClient {
             &self.device_private_key,
             &self.kid,
         )?;
-        let resp = rest.submit_request(client_id, &jws).await?;
+        let resp = self.rest.submit_request(client_id, &jws).await?;
         if resp.status != "complete" {
             bail!("HSM sign failed: {:?}", resp);
         }
