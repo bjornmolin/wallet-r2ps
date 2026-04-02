@@ -22,11 +22,7 @@ fn jose() -> JoseFixture {
         .to_public_key_pem(Default::default())
         .unwrap();
     JoseFixture {
-        adapter: JoseAdapter::new(
-            &pem::parse(public_pem_str.as_bytes()).unwrap(),
-            &pem::parse(private_pem_str.as_bytes()).unwrap(),
-        )
-        .unwrap(),
+        adapter: JoseAdapter::new(secret_key).unwrap(),
         public_pem: public_pem_str.to_string(),
     }
 }
