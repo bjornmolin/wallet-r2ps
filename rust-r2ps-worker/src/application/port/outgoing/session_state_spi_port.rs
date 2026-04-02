@@ -15,6 +15,7 @@ pub struct SessionData {
     pub session_key: SessionKey,
     pub purpose: Option<String>,
     pub operation: Option<OngoingOperation>,
+    pub has_performed_hsm_operation: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -45,6 +46,7 @@ pub enum SessionTransition {
         session_key: SessionKey,
     },
     BeginChangingPin,
+    MarkHsmOperationPerformed,
     End,
 }
 

@@ -56,13 +56,14 @@ enum NextState {
 ///
 /// Valid transitions:
 ///
-/// | Current state             | Transition          | Next state                        |
-/// |---------------------------|---------------------|-----------------------------------|
-/// | None                      | CreatePendingAuth   | PendingAuth                       |
-/// | PendingAuth               | Authenticate        | Active { operation: None }        |
-/// | Active { operation: None }| BeginChangingPin    | Active { operation: ChangingPin } |
-/// | Active { .. }             | End                 | None (invalidate)                 |
-/// |---------------------------|---------------------|-----------------------------------|
+/// | Current state                                    | Transition          | Next state                        |
+/// |--------------------------------------------------|---------------------|-----------------------------------|
+/// | None                                             | CreatePendingAuth   | PendingAuth                       |
+/// | PendingAuth                                      | Authenticate        | Active { operation: None }        |
+/// | Active { operation: None }                       | BeginChangingPin    | Active { operation: ChangingPin } |
+/// | Active { operation: None, hsm_op: false }         | MarkHsmOperationPerformed | Active { hsm_op: true }     |
+/// | Active { .. }                                    | End                 | None (invalidate)                 |
+/// |--------------------------------------------------|---------------------|-----------------------------------|
 fn next_state(
     current: Option<SessionState>,
     transition: SessionTransition,
@@ -88,6 +89,7 @@ fn next_state(
             session_key,
             purpose: pending.purpose,
             operation: None,
+            has_performed_hsm_operation: false,
         }))),
 
         // Pin change initiated; only valid when no other operation is already in progress
@@ -96,6 +98,16 @@ fn next_state(
         {
             Ok(NextState::Set(SessionState::Active(SessionData {
                 operation: Some(OngoingOperation::ChangingPin),
+                ..data
+            })))
+        }
+
+        // HSM operation completed; only valid when no operation in progress and no prior HSM op
+        (Some(SessionState::Active(data)), SessionTransition::MarkHsmOperationPerformed)
+            if data.operation.is_none() && !data.has_performed_hsm_operation =>
+        {
+            Ok(NextState::Set(SessionState::Active(SessionData {
+                has_performed_hsm_operation: true,
                 ..data
             })))
         }

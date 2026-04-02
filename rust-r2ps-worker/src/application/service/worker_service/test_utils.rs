@@ -231,6 +231,7 @@ impl SessionStateSpiPort for MockSessionStateTransitionErrorSpi {
                 session_key: self.key.clone(),
                 purpose: None,
                 operation: None,
+                has_performed_hsm_operation: false,
             },
         ))
     }
