@@ -1,4 +1,4 @@
-use crate::application::port::outgoing::pake_port::{PakeError, PakePort, RegistrationResult};
+use crate::application::port::outgoing::pake_port::{MockPakePort, RegistrationResult};
 use crate::application::port::outgoing::session_state_spi_port::{
     OngoingOperation, PendingAuthData, PendingLoginState, SessionData, SessionKey, SessionState,
 };
@@ -14,64 +14,11 @@ use crate::domain::{
     PakePayloadVector, PakeRequest, ServiceRequestError, SessionId,
 };
 use rstest::rstest;
-use std::sync::{Arc, Mutex};
-
-// -----------------------------------------------------------------------------
-// Mock
-// -----------------------------------------------------------------------------
-
-struct MockPakePort {
-    pub auth_start_called: Mutex<bool>,
-    pub auth_finish_called: Mutex<bool>,
-}
-
-impl PakePort for MockPakePort {
-    fn registration_start(
-        &self,
-        _request_bytes: &[u8],
-        _client_id: &str,
-    ) -> Result<PakePayloadVector, PakeError> {
-        unimplemented!()
-    }
-
-    fn registration_finish(&self, _upload_bytes: &[u8]) -> Result<RegistrationResult, PakeError> {
-        unimplemented!()
-    }
-
-    fn authentication_start(
-        &self,
-        _request_bytes: &[u8],
-        _password_file_bytes: &[u8],
-        _client_id: &str,
-    ) -> Result<(PakePayloadVector, PendingLoginState), PakeError> {
-        *self.auth_start_called.lock().unwrap() = true;
-        Ok((
-            PakePayloadVector::new(vec![1]),
-            PendingLoginState::new(vec![1]),
-        ))
-    }
-
-    fn authentication_finish(
-        &self,
-        _finalization_bytes: &[u8],
-        _pending_state: &PendingLoginState,
-        _client_id: &str,
-    ) -> Result<SessionKey, PakeError> {
-        *self.auth_finish_called.lock().unwrap() = true;
-        Ok(SessionKey::new(vec![1]))
-    }
-}
+use std::sync::Arc;
 
 // -----------------------------------------------------------------------------
 // Helpers
 // -----------------------------------------------------------------------------
-
-fn mock_pake_port() -> Arc<MockPakePort> {
-    Arc::new(MockPakePort {
-        auth_start_called: Mutex::new(false),
-        auth_finish_called: Mutex::new(false),
-    })
-}
 
 fn state_without_password_file() -> DeviceHsmState {
     DeviceHsmState {
@@ -128,8 +75,7 @@ fn base_context(state: DeviceHsmState, inner_request: InnerRequest) -> Operation
 
 #[test]
 fn test_authenticate_start_unknown_client_fails() {
-    let mock = mock_pake_port();
-    let op = AuthenticateStartOperation::new(mock.clone());
+    let op = AuthenticateStartOperation::new(Arc::new(MockPakePort::new()));
 
     let context = base_context(
         state_without_password_file(),
@@ -139,7 +85,6 @@ fn test_authenticate_start_unknown_client_fails() {
     let result = op.execute(context);
 
     assert!(matches!(result, Err(ServiceRequestError::UnknownClient)));
-    assert!(!*mock.auth_start_called.lock().unwrap());
 }
 
 // -----------------------------------------------------------------------------
@@ -148,8 +93,7 @@ fn test_authenticate_start_unknown_client_fails() {
 
 #[test]
 fn test_authenticate_finish_no_session_id_fails() {
-    let mock = mock_pake_port();
-    let op = AuthenticateFinishOperation::new(mock.clone());
+    let op = AuthenticateFinishOperation::new(Arc::new(MockPakePort::new()));
 
     let mut context = base_context(
         state_without_password_file(),
@@ -164,13 +108,11 @@ fn test_authenticate_finish_no_session_id_fails() {
     let result = op.execute(context);
 
     assert!(matches!(result, Err(ServiceRequestError::UnknownSession)));
-    assert!(!*mock.auth_finish_called.lock().unwrap());
 }
 
 #[test]
 fn test_authenticate_finish_wrong_state_active_fails() {
-    let mock = mock_pake_port();
-    let op = AuthenticateFinishOperation::new(mock.clone());
+    let op = AuthenticateFinishOperation::new(Arc::new(MockPakePort::new()));
 
     let mut context = base_context(
         state_without_password_file(),
@@ -187,13 +129,11 @@ fn test_authenticate_finish_wrong_state_active_fails() {
     let result = op.execute(context);
 
     assert!(matches!(result, Err(ServiceRequestError::UnknownSession)));
-    assert!(!*mock.auth_finish_called.lock().unwrap());
 }
 
 #[test]
 fn test_authenticate_finish_no_session_state_fails() {
-    let mock = mock_pake_port();
-    let op = AuthenticateFinishOperation::new(mock.clone());
+    let op = AuthenticateFinishOperation::new(Arc::new(MockPakePort::new()));
 
     let mut context = base_context(
         state_without_password_file(),
@@ -205,51 +145,11 @@ fn test_authenticate_finish_no_session_state_fails() {
     let result = op.execute(context);
 
     assert!(matches!(result, Err(ServiceRequestError::UnknownSession)));
-    assert!(!*mock.auth_finish_called.lock().unwrap());
 }
 
 // -----------------------------------------------------------------------------
 // RegisterFinishOperation
 // -----------------------------------------------------------------------------
-
-struct MockRegistrationPakePort {
-    registration_result: RegistrationResult,
-}
-
-impl PakePort for MockRegistrationPakePort {
-    fn registration_start(
-        &self,
-        _request_bytes: &[u8],
-        _client_id: &str,
-    ) -> Result<PakePayloadVector, PakeError> {
-        unimplemented!()
-    }
-
-    fn registration_finish(&self, _upload_bytes: &[u8]) -> Result<RegistrationResult, PakeError> {
-        Ok(RegistrationResult {
-            password_file: self.registration_result.password_file.clone(),
-            server_identifier: self.registration_result.server_identifier.clone(),
-        })
-    }
-
-    fn authentication_start(
-        &self,
-        _request_bytes: &[u8],
-        _password_file_bytes: &[u8],
-        _client_id: &str,
-    ) -> Result<(PakePayloadVector, PendingLoginState), PakeError> {
-        unimplemented!()
-    }
-
-    fn authentication_finish(
-        &self,
-        _finalization_bytes: &[u8],
-        _pending_state: &PendingLoginState,
-        _client_id: &str,
-    ) -> Result<SessionKey, PakeError> {
-        unimplemented!()
-    }
-}
 
 fn state_with_auth_code(code: &str) -> DeviceHsmState {
     DeviceHsmState {
@@ -289,13 +189,14 @@ fn register_finish_consumes_auth_code_and_replaces_password_file() {
     const NEW_PF_BYTES: &[u8] = &[0xDE, 0xAD, 0xBE, 0xEF];
     const SERVER_ID: &str = "test-server";
 
-    let mock = Arc::new(MockRegistrationPakePort {
-        registration_result: RegistrationResult {
+    let mut mock = MockPakePort::new();
+    mock.expect_registration_finish().once().returning(|_| {
+        Ok(RegistrationResult {
             password_file: crate::domain::PasswordFile(NEW_PF_BYTES.to_vec()),
             server_identifier: SERVER_ID.to_string(),
-        },
+        })
     });
-    let op = RegisterFinishOperation::new(mock);
+    let op = RegisterFinishOperation::new(Arc::new(mock));
 
     let context = base_context(
         state_with_auth_code(AUTH_CODE),
@@ -320,13 +221,14 @@ fn register_finish_consumes_auth_code_and_replaces_password_file() {
 fn register_finish_reuse_of_consumed_auth_code_fails() {
     const AUTH_CODE: &str = "secret-code";
 
-    let mock = Arc::new(MockRegistrationPakePort {
-        registration_result: RegistrationResult {
+    let mut mock = MockPakePort::new();
+    mock.expect_registration_finish().once().returning(|_| {
+        Ok(RegistrationResult {
             password_file: crate::domain::PasswordFile(vec![0x01]),
             server_identifier: "s".to_string(),
-        },
+        })
     });
-    let op = RegisterFinishOperation::new(mock);
+    let op = RegisterFinishOperation::new(Arc::new(mock));
 
     // First call: succeeds and consumes the code
     let context = base_context(
@@ -350,49 +252,19 @@ fn register_finish_reuse_of_consumed_auth_code_fails() {
 // PinChangeFinishOperation
 // -----------------------------------------------------------------------------
 
-struct MockPinChangePakePort;
-
-impl PakePort for MockPinChangePakePort {
-    fn registration_start(
-        &self,
-        _request_bytes: &[u8],
-        _client_id: &str,
-    ) -> Result<PakePayloadVector, PakeError> {
-        unimplemented!()
-    }
-
-    fn registration_finish(&self, _upload_bytes: &[u8]) -> Result<RegistrationResult, PakeError> {
-        Ok(RegistrationResult {
-            password_file: crate::domain::PasswordFile(vec![0xCA, 0xFE, 0xBA, 0xBE]),
-            server_identifier: "pin-change-server".to_string(),
-        })
-    }
-
-    fn authentication_start(
-        &self,
-        _request_bytes: &[u8],
-        _password_file_bytes: &[u8],
-        _client_id: &str,
-    ) -> Result<(PakePayloadVector, PendingLoginState), PakeError> {
-        unimplemented!()
-    }
-
-    fn authentication_finish(
-        &self,
-        _finalization_bytes: &[u8],
-        _pending_state: &PendingLoginState,
-        _client_id: &str,
-    ) -> Result<SessionKey, PakeError> {
-        unimplemented!()
-    }
-}
-
 #[test]
 fn pin_change_finish_replaces_password_file_and_ends_session() {
     const NEW_PF_BYTES: &[u8] = &[0xCA, 0xFE, 0xBA, 0xBE];
     const SERVER_ID: &str = "pin-change-server";
 
-    let op = PinChangeFinishOperation::new(Arc::new(MockPinChangePakePort));
+    let mut mock = MockPakePort::new();
+    mock.expect_registration_finish().once().returning(|_| {
+        Ok(RegistrationResult {
+            password_file: crate::domain::PasswordFile(vec![0xCA, 0xFE, 0xBA, 0xBE]),
+            server_identifier: "pin-change-server".to_string(),
+        })
+    });
+    let op = PinChangeFinishOperation::new(Arc::new(mock));
     let mut context = base_context(
         state_without_password_file(),
         pake_inner_request(OperationId::ChangePinFinish),
@@ -401,6 +273,7 @@ fn pin_change_finish_replaces_password_file_and_ends_session() {
         session_key: SessionKey::new(vec![1]),
         purpose: None,
         operation: Some(OngoingOperation::ChangingPin),
+        has_performed_hsm_operation: false,
     }));
 
     let result = op.execute(context).expect("should succeed");
@@ -431,13 +304,14 @@ fn pin_change_finish_replaces_password_file_and_ends_session() {
         session_key: SessionKey::new(vec![1]),
         purpose: None,
         operation: None,
+        has_performed_hsm_operation: false,
     }))
 )]
 fn pin_change_finish_requires_active_changing_pin_state(
     #[case] _label: &str,
     #[case] session_state: Option<SessionState>,
 ) {
-    let op = PinChangeFinishOperation::new(Arc::new(MockPinChangePakePort));
+    let op = PinChangeFinishOperation::new(Arc::new(MockPakePort::new()));
     let mut context = base_context(
         state_without_password_file(),
         pake_inner_request(OperationId::ChangePinFinish),

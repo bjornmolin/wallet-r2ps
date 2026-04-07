@@ -1,10 +1,9 @@
-use crate::application::jose_port::{JosePort, JweDecryptionKey};
+use crate::application::jose_port::{JoseError, JosePort, JweDecryptionKey, MockJosePort};
 use crate::application::port::outgoing::session_state_spi_port::SessionKey;
 use crate::application::service::operations::OperationResult;
 use crate::application::service::worker_service::context::ResponseContext;
 use crate::application::service::worker_service::error::{OuterError, UpstreamError, WorkerError};
 use crate::application::service::worker_service::response::{ProcessError, ResponseBuilder};
-use crate::application::service::worker_service::test_utils::MockJoseFailing;
 use crate::domain::ServiceRequestError;
 use crate::domain::value_objects::r2ps::{InnerResponse, OperationId, Status};
 use crate::domain::{DeviceHsmState, EcPublicJwk, InnerResponseData, SessionId};
@@ -281,10 +280,22 @@ mod error_handling {
     // The test guards both that order and the resulting error variant when step 2 fails.
     #[test]
     fn test_encode_response_fails_when_state_signing_fails() {
-        let jose = Arc::new(MockJoseFailing {
-            sign_count: Mutex::new(0),
+        let sign_count = Arc::new(Mutex::new(0u32));
+        let sign_count_clone = sign_count.clone();
+        let mut mock_jose = MockJosePort::new();
+        mock_jose
+            .expect_jwe_encrypt()
+            .returning(|_, _| Ok("enc.jwe".to_string()));
+        mock_jose.expect_jws_sign().times(2).returning(move |_| {
+            let mut n = sign_count_clone.lock().unwrap();
+            *n += 1;
+            if *n == 1 {
+                Ok("ok.jws".to_string())
+            } else {
+                Err(JoseError::SignError)
+            }
         });
-        let builder = ResponseBuilder::new(jose);
+        let builder = ResponseBuilder::new(Arc::new(mock_jose));
         // mock_context provides a session_key, satisfying EncryptOption::Session for HsmListKeys.
         let context = mock_context("req", OperationId::HsmListKeys);
         let op_result = OperationResult {

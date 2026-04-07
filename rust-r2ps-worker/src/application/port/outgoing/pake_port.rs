@@ -16,6 +16,7 @@ pub struct RegistrationResult {
     pub server_identifier: String,
 }
 
+#[cfg_attr(test, mockall::automock)]
 pub trait PakePort: Send + Sync {
     fn registration_start(
         &self,

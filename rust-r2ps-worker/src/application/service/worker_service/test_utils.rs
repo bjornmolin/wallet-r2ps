@@ -1,16 +1,14 @@
-use crate::application::hsm_spi_port::HsmSpiPort;
+use crate::application::hsm_spi_port::MockHsmSpiPort;
 use crate::application::jose_port::{JoseError, JosePort, JweDecryptionKey, JweEncryptionKey};
-use crate::application::pake_port::{PakeError, PakePort, RegistrationResult};
+use crate::application::pake_port::MockPakePort;
 use crate::application::port::outgoing::session_state_spi_port::{
     SessionKey, SessionState, SessionStateError, SessionStateSpiPort, SessionTransition,
 };
 use crate::application::{WorkerPorts, WorkerResponseError, WorkerResponseSpiPort};
-use crate::domain::value_objects::r2ps::PakePayloadVector;
 use crate::domain::{
-    Curve, DeviceHsmState, EcPublicJwk, HsmKey, HsmWorkerRequest, OuterRequest, PasswordFile,
-    PasswordFileEntry, SessionId, TypedJwe, TypedJws, WorkerResponse,
+    DeviceHsmState, EcPublicJwk, HsmWorkerRequest, OuterRequest, PasswordFile, PasswordFileEntry,
+    SessionId, TypedJwe, TypedJws, WorkerResponse,
 };
-use cryptoki::error::Error as CryptokiError;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -58,14 +56,22 @@ impl JosePort for MockJoseDeterministic {
     fn jws_verify_device(&self, _jws: &str, _key: &EcPublicJwk) -> Result<Vec<u8>, JoseError> {
         Ok(self.outer_json.clone())
     }
-    fn jwe_encrypt(&self, payload: &[u8], _key: JweEncryptionKey<'_>) -> Result<String, JoseError> {
+    fn jwe_encrypt<'a>(
+        &self,
+        payload: &[u8],
+        _key: JweEncryptionKey<'a>,
+    ) -> Result<String, JoseError> {
         self.captured_inner_encrypt_payload
             .lock()
             .unwrap()
             .push(payload.to_vec());
         Ok("encrypted.inner.response".to_string())
     }
-    fn jwe_decrypt(&self, _jwe: &str, _key: JweDecryptionKey<'_>) -> Result<Vec<u8>, JoseError> {
+    fn jwe_decrypt<'a>(
+        &self,
+        _jwe: &str,
+        _key: JweDecryptionKey<'a>,
+    ) -> Result<Vec<u8>, JoseError> {
         Ok(self.inner_json.clone())
     }
     fn peek_kid(&self, compact: &str) -> Result<Option<String>, JoseError> {
@@ -74,46 +80,6 @@ impl JosePort for MockJoseDeterministic {
             "inner.jwe" => Ok(Some(self.inner_kid.clone())),
             _ => Err(JoseError::InvalidKey),
         }
-    }
-}
-
-pub struct MockJoseFailing {
-    pub sign_count: Mutex<u32>,
-}
-
-impl JosePort for MockJoseFailing {
-    fn jws_sign(&self, _payload_json: &[u8]) -> Result<String, JoseError> {
-        // Succeeds on the first call (signing the inbound state JWS re-seal) then fails on
-        // every subsequent call. This exercises the failure path where the service successfully
-        // decodes the request but then cannot sign the error response — verifying that the
-        // double-failure case (operation error + sign error) is handled gracefully rather than
-        // panicking or swallowing the original error.
-        let mut n = self.sign_count.lock().unwrap();
-        *n += 1;
-        if *n == 1 {
-            Ok("ok.jws".to_string())
-        } else {
-            Err(JoseError::SignError)
-        }
-    }
-    fn jws_verify_server(&self, _jws: &str) -> Result<Vec<u8>, JoseError> {
-        unimplemented!()
-    }
-    fn jws_verify_device(&self, _jws: &str, _key: &EcPublicJwk) -> Result<Vec<u8>, JoseError> {
-        unimplemented!()
-    }
-    fn jwe_encrypt(
-        &self,
-        _payload: &[u8],
-        _key: JweEncryptionKey<'_>,
-    ) -> Result<String, JoseError> {
-        Ok("enc.jwe".to_string())
-    }
-    fn jwe_decrypt(&self, _jwe: &str, _key: JweDecryptionKey<'_>) -> Result<Vec<u8>, JoseError> {
-        unimplemented!()
-    }
-    fn peek_kid(&self, _compact: &str) -> Result<Option<String>, JoseError> {
-        unimplemented!()
     }
 }
 
@@ -133,67 +99,6 @@ impl SessionStateSpiPort for MockSessionStateSpi {
     }
     fn get_remaining_ttl(&self, _session_id: Option<&SessionId>) -> Option<Duration> {
         Some(Duration::from_secs(30))
-    }
-}
-
-pub struct MockHsmSpi;
-impl HsmSpiPort for MockHsmSpi {
-    fn generate_key(
-        &self,
-        _label: &str,
-        _curve: &Curve,
-    ) -> Result<HsmKey, Box<dyn std::error::Error>> {
-        unimplemented!()
-    }
-    fn sign(&self, _key: &HsmKey, _sign_payload: &[u8]) -> Result<Vec<u8>, CryptokiError> {
-        unimplemented!()
-    }
-}
-
-pub struct MockPake {
-    pub auth_start_succeeds: bool,
-}
-impl PakePort for MockPake {
-    fn registration_start(
-        &self,
-        _request_bytes: &[u8],
-        _client_id: &str,
-    ) -> Result<PakePayloadVector, PakeError> {
-        Err(PakeError::RegistrationStartFailed)
-    }
-    fn registration_finish(&self, _upload_bytes: &[u8]) -> Result<RegistrationResult, PakeError> {
-        Err(PakeError::InvalidRequest)
-    }
-    fn authentication_start(
-        &self,
-        _request_bytes: &[u8],
-        _password_file_bytes: &[u8],
-        _client_id: &str,
-    ) -> Result<
-        (
-            PakePayloadVector,
-            crate::application::port::outgoing::session_state_spi_port::PendingLoginState,
-        ),
-        PakeError,
-    > {
-        if self.auth_start_succeeds {
-            Ok((
-                PakePayloadVector::new(vec![0xAA]),
-                crate::application::port::outgoing::session_state_spi_port::PendingLoginState::new(
-                    vec![0xBB],
-                ),
-            ))
-        } else {
-            Err(PakeError::AuthStartFailed)
-        }
-    }
-    fn authentication_finish(
-        &self,
-        _finalization_bytes: &[u8],
-        _pending_state: &crate::application::port::outgoing::session_state_spi_port::PendingLoginState,
-        _client_id: &str,
-    ) -> Result<SessionKey, PakeError> {
-        Err(PakeError::AuthFinishFailed)
     }
 }
 
@@ -302,10 +207,8 @@ pub fn make_outer(context: &str, session_id: Option<SessionId>) -> OuterRequest 
 pub fn make_ports(worker_response: Arc<dyn WorkerResponseSpiPort + Send + Sync>) -> WorkerPorts {
     WorkerPorts {
         session_state: Arc::new(MockSessionStateSpi),
-        hsm: Arc::new(MockHsmSpi),
+        hsm: Arc::new(MockHsmSpiPort::new()),
         worker_response,
-        pake: Arc::new(MockPake {
-            auth_start_succeeds: false,
-        }),
+        pake: Arc::new(MockPakePort::new()),
     }
 }
