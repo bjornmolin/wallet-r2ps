@@ -9,15 +9,13 @@ use uuid::Uuid;
 
 use crate::application::port::incoming::ResponseUseCase;
 use crate::application::port::outgoing::{
-    DeviceStatePort, PendingContextPort, RequestSenderPort, StateInitSenderPort,
+    DeviceStatePort, PendingContextPort, RequestSenderPort, StateInitCachePort, StateInitSenderPort,
 };
 use crate::domain::{
     AsyncResponseDto, AsyncResponseStatus, BffRequest, CachedResponse, DEFAULT_TTL_SECONDS,
     HsmWorkerRequest, NewStateRequestDto, NewStateResponseDto, PendingRequestContext,
     ProblemDetail, StateInitRequest,
 };
-use crate::infrastructure::adapters::incoming::kafka::state_init_cache::StateInitResponseCache;
-
 pub const PROBLEM_CONTENT_TYPE: &str = "application/problem+json";
 
 pub struct AppState {
@@ -26,9 +24,10 @@ pub struct AppState {
     pub state_init_sender_port: Arc<dyn StateInitSenderPort>,
     pub pending_context_port: Arc<dyn PendingContextPort>,
     pub response_use_case: Arc<dyn ResponseUseCase>,
-    pub state_init_cache: Arc<StateInitResponseCache>,
+    pub state_init_cache: Arc<dyn StateInitCachePort>,
     pub serve_sync: bool,
     pub sync_timeout_ms: u64,
+    pub state_init_timeout_ms: u64,
     pub response_events_template_url: String,
 }
 
@@ -369,7 +368,10 @@ pub async fn create_state(
 
     let init_response = state
         .state_init_cache
-        .wait_for_response(&request_id, Duration::from_secs(5))
+        .wait_for_response(
+            &request_id,
+            Duration::from_millis(state.state_init_timeout_ms),
+        )
         .await;
 
     match init_response {

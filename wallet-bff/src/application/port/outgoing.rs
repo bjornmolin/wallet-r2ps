@@ -1,4 +1,8 @@
-use crate::domain::{CachedResponse, HsmWorkerRequest, PendingRequestContext, StateInitRequest};
+use std::time::Duration;
+
+use crate::domain::{
+    CachedResponse, HsmWorkerRequest, PendingRequestContext, StateInitRequest, StateInitResponse,
+};
 
 /// SPI port: load and save device state (JWS) in the state store.
 #[async_trait::async_trait]
@@ -31,4 +35,19 @@ pub trait PendingContextPort: Send + Sync {
 pub trait ResponseSinkPort: Send + Sync {
     async fn store(&self, response: &CachedResponse);
     async fn load(&self, request_id: &str) -> Option<CachedResponse>;
+}
+
+/// SPI port: in-memory cache for state-init responses, shared between the Kafka consumer
+/// and the HTTP request handler that polls for the result.
+#[async_trait::async_trait]
+pub trait StateInitCachePort: Send + Sync {
+    /// Block until a response for `request_id` appears or `timeout` elapses.
+    async fn wait_for_response(
+        &self,
+        request_id: &str,
+        timeout: Duration,
+    ) -> Option<StateInitResponse>;
+
+    /// Insert a response into the cache.
+    async fn put(&self, request_id: String, response: StateInitResponse);
 }

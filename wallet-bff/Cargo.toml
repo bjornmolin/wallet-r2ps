@@ -26,3 +26,4 @@ utoipa-swagger-ui = { version = "9", features = ["axum"] }
 
 [dev-dependencies]
 rstest = "0.23"
+tower = { version = "0.5", features = ["util"] }
