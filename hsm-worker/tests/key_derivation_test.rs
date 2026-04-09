@@ -1,7 +1,7 @@
 use cryptoki::error::Error as CryptokiError;
-use rust_r2ps_worker::application::port::outgoing::hsm_spi_port::{DerivedSecret, HsmSpiPort};
-use rust_r2ps_worker::domain::{Curve, HsmKey};
-use rust_r2ps_worker::infrastructure::config::{jose_utils, key_derivation};
+use hsm_worker::application::port::outgoing::hsm_spi_port::{DerivedSecret, HsmSpiPort};
+use hsm_worker::domain::{Curve, HsmKey};
+use hsm_worker::infrastructure::config::{jose_utils, key_derivation};
 use sha2::{Digest, Sha512};
 
 /// Mock HSM that computes SHA-512(root_key || domain_separator) as a stand-in for HMAC-SHA512.

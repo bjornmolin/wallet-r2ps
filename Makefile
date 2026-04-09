@@ -5,7 +5,7 @@ SHELL := /bin/bash
 # Target 1: Copy the tokens
 copy-tokens:
 	@echo "Copying tokens from container..."
-	docker compose cp rust-r2ps-worker:/myuser/softhsm/tokens softhsm-tokens
+	docker compose cp hsm-worker:/myuser/softhsm/tokens softhsm-tokens
 	@echo "Copy complete."
 
 # Target 2: Verify the copy worked
@@ -31,7 +31,7 @@ down:
 	docker compose down
 
 logs:
-	docker compose logs -f rust-r2ps-worker
+	docker compose logs -f hsm-worker
 
 # Display this help message
 help:

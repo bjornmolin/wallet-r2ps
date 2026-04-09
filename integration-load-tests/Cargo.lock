@@ -894,6 +894,42 @@ dependencies = [
 ]
 
 [[package]]
+name = "hsm-worker"
+version = "0.1.0"
+dependencies = [
+ "argon2",
+ "base64",
+ "chrono",
+ "clap",
+ "config",
+ "cryptoki",
+ "ctrlc",
+ "der",
+ "digest",
+ "dotenvy",
+ "elliptic-curve",
+ "hex",
+ "hkdf",
+ "iso8601-duration",
+ "josekit",
+ "moka",
+ "opaque-ke",
+ "p256",
+ "pem",
+ "problem_details",
+ "rand 0.8.5",
+ "rdkafka",
+ "serde",
+ "serde_json",
+ "sha2",
+ "spki",
+ "strum_macros",
+ "tracing",
+ "tracing-subscriber",
+ "uuid",
+]
+
+[[package]]
 name = "http"
 version = "1.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1157,13 +1193,13 @@ dependencies = [
  "elliptic-curve",
  "flate2",
  "hkdf",
+ "hsm-worker",
  "josekit",
  "opaque-ke",
  "p256",
  "pem",
  "rand 0.8.5",
  "reqwest",
- "rust-r2ps-worker",
  "serde",
  "serde_json",
  "sha2",
@@ -2065,42 +2101,6 @@ checksum = "796e8d2b6696392a43bea58116b667fb4c29727dc5abd27d6acf338bb4f688c7"
 dependencies = [
  "cfg-if",
  "ordered-multimap",
-]
-
-[[package]]
-name = "rust-r2ps-worker"
-version = "0.1.0"
-dependencies = [
- "argon2",
- "base64",
- "chrono",
- "clap",
- "config",
- "cryptoki",
- "ctrlc",
- "der",
- "digest",
- "dotenvy",
- "elliptic-curve",
- "hex",
- "hkdf",
- "iso8601-duration",
- "josekit",
- "moka",
- "opaque-ke",
- "p256",
- "pem",
- "problem_details",
- "rand 0.8.5",
- "rdkafka",
- "serde",
- "serde_json",
- "sha2",
- "spki",
- "strum_macros",
- "tracing",
- "tracing-subscriber",
- "uuid",
 ]
 
 [[package]]

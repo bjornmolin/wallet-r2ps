@@ -1,4 +1,4 @@
-use rust_r2ps_worker::run;
+use hsm_worker::run;
 use tracing::instrument;
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;

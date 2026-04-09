@@ -1,4 +1,4 @@
-use rust_r2ps_worker::domain;
+use hsm_worker::domain;
 use utoipa::OpenApi;
 
 /// OpenAPI documentation for the R2PS HSM Worker domain model.
