@@ -10,6 +10,8 @@ pub mod protocol;
 pub mod service;
 
 #[cfg(test)]
+mod device_state_tests;
+#[cfg(test)]
 mod protocol_tests;
 
 pub use config::*;
