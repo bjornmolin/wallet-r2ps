@@ -1,11 +1,11 @@
 [package]
-name = "rust-r2ps-worker"
+name = "hsm-worker"
 version = "0.1.0"
 edition = "2024"
-default-run = "rust-r2ps-worker"
+default-run = "hsm-worker"
 
 [lib]
-name = "rust_r2ps_worker"
+name = "hsm_worker"
 path = "src/lib.rs"
 
 [[bin]]
@@ -14,7 +14,7 @@ path = "src/generate_openapi.rs"
 required-features = ["openapi"]
 
 [[bin]]
-name = "rust-r2ps-worker"
+name = "hsm-worker"
 path = "src/main.rs"
 
 [[bin]]

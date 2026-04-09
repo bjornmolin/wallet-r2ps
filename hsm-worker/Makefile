@@ -15,7 +15,7 @@ KEYTOOL_LOCAL   := ./target/debug/digg-hsm-keytool \
 	--hsm-lib $(PKCS11_LIB) \
 	--slot-token-label $(PKCS11_SLOT_TOKEN_LABEL) \
 	--pin $(PKCS11_USER_PIN)
-KEYTOOL_DOCKER  := docker compose -f ../docker-compose.yaml exec rust-r2ps-worker /usr/local/bin/digg-hsm-keytool \
+KEYTOOL_DOCKER  := docker compose -f ../docker-compose.yaml exec hsm-worker /usr/local/bin/digg-hsm-keytool \
 	--hsm-lib $(PKCS11_LIB) \
 	--slot-token-label $(PKCS11_SLOT_TOKEN_LABEL) \
 	--pin $(PKCS11_USER_PIN)

@@ -9,20 +9,20 @@ use testcontainers::ContainerAsync;
 use testcontainers::runners::AsyncRunner;
 use testcontainers_modules::kafka::apache::{self, Kafka};
 
-use rust_r2ps_worker::application::port::outgoing::state_init_response_spi_port::{
+use hsm_worker::application::port::outgoing::state_init_response_spi_port::{
     StateInitResponseError, StateInitResponseSpiPort,
 };
-use rust_r2ps_worker::application::{WorkerRequestUseCase, WorkerResponseSpiPort};
-use rust_r2ps_worker::domain::value_objects::r2ps::{Status, WorkerRequestError};
-use rust_r2ps_worker::domain::{
+use hsm_worker::application::{WorkerRequestUseCase, WorkerResponseSpiPort};
+use hsm_worker::domain::value_objects::r2ps::{Status, WorkerRequestError};
+use hsm_worker::domain::{
     EcPublicJwk, HsmWorkerRequest, HsmWorkerRequestDto, StateInitRequest, StateInitResponse,
     TypedJws, WorkerResponse,
 };
-use rust_r2ps_worker::infrastructure::KafkaConfig;
-use rust_r2ps_worker::infrastructure::adapters::incoming::r2ps_request_kafka_message_receiver::WorkerRequestKafkaReceiver;
-use rust_r2ps_worker::infrastructure::adapters::incoming::state_init_request_kafka_receiver::StateInitRequestKafkaReceiver;
-use rust_r2ps_worker::infrastructure::adapters::outgoing::r2ps_response_kafka_message_sender::WorkerResponseKafkaSender;
-use rust_r2ps_worker::infrastructure::adapters::outgoing::state_init_response_kafka_sender::StateInitResponseKafkaMessageSender;
+use hsm_worker::infrastructure::KafkaConfig;
+use hsm_worker::infrastructure::adapters::incoming::r2ps_request_kafka_message_receiver::WorkerRequestKafkaReceiver;
+use hsm_worker::infrastructure::adapters::incoming::state_init_request_kafka_receiver::StateInitRequestKafkaReceiver;
+use hsm_worker::infrastructure::adapters::outgoing::r2ps_response_kafka_message_sender::WorkerResponseKafkaSender;
+use hsm_worker::infrastructure::adapters::outgoing::state_init_response_kafka_sender::StateInitResponseKafkaMessageSender;
 
 // ── Container helper ─────────────────────────────────────────────────────────
 
@@ -252,9 +252,9 @@ async fn test_state_init_consumer_receives_and_processes() {
     let capturing_sink = Arc::new(CapturingStateInitResponseSink::new());
 
     // Build a real StateInitService with a real JoseAdapter + capturing response sink
+    use hsm_worker::application::service::state_init_service::StateInitService;
+    use hsm_worker::infrastructure::adapters::outgoing::jose_adapter::JoseAdapter;
     use p256::SecretKey;
-    use rust_r2ps_worker::application::service::state_init_service::StateInitService;
-    use rust_r2ps_worker::infrastructure::adapters::outgoing::jose_adapter::JoseAdapter;
 
     let secret = SecretKey::random(&mut rand::thread_rng());
     let jose = Arc::new(JoseAdapter::new(secret).unwrap());
@@ -345,27 +345,27 @@ async fn test_worker_kafka_round_trip() {
 
     // Build a minimal WorkerService that can handle end-session
     // (end-session doesn't need PAKE or HSM, it only needs JOSE for JWS verify/sign)
+    use hsm_worker::application::WorkerPorts;
+    use hsm_worker::application::port::outgoing::hsm_spi_port::HsmSpiPort;
+    use hsm_worker::application::port::outgoing::pake_port::{
+        PakeError, PakePort, RegistrationResult,
+    };
+    use hsm_worker::application::port::outgoing::session_state_spi_port::{
+        PendingLoginState, SessionKey,
+    };
+    use hsm_worker::application::service::worker_service::WorkerService;
+    use hsm_worker::domain::value_objects::r2ps::OperationId;
+    use hsm_worker::domain::{HsmKey, InnerRequest, OuterRequest, TypedJwe};
+    use hsm_worker::infrastructure::adapters::outgoing::jose_adapter::JoseAdapter;
+    use hsm_worker::infrastructure::adapters::outgoing::session_state_memory_cache::SessionStateMemoryCache;
     use josekit::jwe::{ECDH_ES, JweHeader};
     use josekit::jws::{ES256, JwsHeader};
     use p256::SecretKey;
     use p256::elliptic_curve::sec1::ToEncodedPoint;
     use p256::pkcs8::{EncodePrivateKey, EncodePublicKey};
-    use rust_r2ps_worker::application::WorkerPorts;
-    use rust_r2ps_worker::application::port::outgoing::hsm_spi_port::HsmSpiPort;
-    use rust_r2ps_worker::application::port::outgoing::pake_port::{
-        PakeError, PakePort, RegistrationResult,
-    };
-    use rust_r2ps_worker::application::port::outgoing::session_state_spi_port::{
-        PendingLoginState, SessionKey,
-    };
-    use rust_r2ps_worker::application::service::worker_service::WorkerService;
-    use rust_r2ps_worker::domain::value_objects::r2ps::OperationId;
-    use rust_r2ps_worker::domain::{HsmKey, InnerRequest, OuterRequest, TypedJwe};
-    use rust_r2ps_worker::infrastructure::adapters::outgoing::jose_adapter::JoseAdapter;
-    use rust_r2ps_worker::infrastructure::adapters::outgoing::session_state_memory_cache::SessionStateMemoryCache;
 
     // Generate server key pair
-    use rust_r2ps_worker::application::port::outgoing::jose_port::JosePort;
+    use hsm_worker::application::port::outgoing::jose_port::JosePort;
     let server_secret = SecretKey::random(&mut rand::thread_rng());
     let pub_pem_str = server_secret
         .public_key()
@@ -381,8 +381,7 @@ async fn test_worker_kafka_round_trip() {
             &self,
             _: &[u8],
             _: &str,
-        ) -> Result<rust_r2ps_worker::domain::value_objects::r2ps::PakePayloadVector, PakeError>
-        {
+        ) -> Result<hsm_worker::domain::value_objects::r2ps::PakePayloadVector, PakeError> {
             unimplemented!()
         }
         fn registration_finish(&self, _: &[u8]) -> Result<RegistrationResult, PakeError> {
@@ -391,11 +390,11 @@ async fn test_worker_kafka_round_trip() {
         fn authentication_start(
             &self,
             _: &[u8],
-            _: &rust_r2ps_worker::domain::PasswordFileEntry,
+            _: &hsm_worker::domain::PasswordFileEntry,
             _: &str,
         ) -> Result<
             (
-                rust_r2ps_worker::domain::value_objects::r2ps::PakePayloadVector,
+                hsm_worker::domain::value_objects::r2ps::PakePayloadVector,
                 PendingLoginState,
             ),
             PakeError,
@@ -417,7 +416,7 @@ async fn test_worker_kafka_round_trip() {
         fn generate_key(
             &self,
             _: &str,
-            _: &rust_r2ps_worker::domain::value_objects::r2ps::Curve,
+            _: &hsm_worker::domain::value_objects::r2ps::Curve,
         ) -> Result<HsmKey, Box<dyn std::error::Error>> {
             unimplemented!()
         }
@@ -429,7 +428,7 @@ async fn test_worker_kafka_round_trip() {
             _: &str,
             _: &str,
         ) -> Result<
-            rust_r2ps_worker::application::port::outgoing::hsm_spi_port::DerivedSecret,
+            hsm_worker::application::port::outgoing::hsm_spi_port::DerivedSecret,
             cryptoki::error::Error,
         > {
             unimplemented!()
@@ -463,7 +462,7 @@ async fn test_worker_kafka_round_trip() {
     let device_point = device_pub.to_encoded_point(false);
 
     let device_kid = "test-device-kid";
-    let device_jwk = rust_r2ps_worker::domain::EcPublicJwk {
+    let device_jwk = hsm_worker::domain::EcPublicJwk {
         kty: "EC".to_string(),
         crv: "P-256".to_string(),
         x: base64::Engine::encode(
@@ -478,16 +477,16 @@ async fn test_worker_kafka_round_trip() {
     };
 
     // 2) Build DeviceHsmState and sign it as JWS
-    let device_state = rust_r2ps_worker::domain::DeviceHsmState {
+    let device_state = hsm_worker::domain::DeviceHsmState {
         version: 1,
-        device_keys: vec![rust_r2ps_worker::domain::DeviceKeyEntry {
+        device_keys: vec![hsm_worker::domain::DeviceKeyEntry {
             public_key: device_jwk.clone(),
             password_files: vec![],
             dev_authorization_code: None,
         }],
         hsm_keys: vec![],
     };
-    let state_jws: TypedJws<rust_r2ps_worker::domain::DeviceHsmState> =
+    let state_jws: TypedJws<hsm_worker::domain::DeviceHsmState> =
         device_state.sign(jose.as_ref()).unwrap();
 
     // 3) Build InnerRequest for list-keys (no data needed)

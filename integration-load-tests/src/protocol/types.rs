@@ -2,16 +2,16 @@
 //
 // SPDX-License-Identifier: EUPL-1.2
 
-//! Protocol wire types matching the rust-r2ps-worker / wallet-bff-ws format.
+//! Protocol wire types matching the hsm-worker / wallet-bff-ws format.
 //!
 //! Response types have fields that may not be directly read in code but are
 //! needed for correct JSON deserialization.
 
 use serde::{Deserialize, Serialize};
 
-// ─── Re-exported types from rust-r2ps-worker ───
+// ─── Re-exported types from hsm-worker ───
 
-pub use rust_r2ps_worker::domain::{
+pub use hsm_worker::domain::{
     CreateKeyServiceData, CreateKeyServiceDataResponse, Curve, EcPublicJwk,
 };
 

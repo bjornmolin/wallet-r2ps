@@ -1,6 +1,9 @@
 # Rust build artifacts
 /target/
 
+# Local environment (symlink or copy of .env-mac / .env_linux)
+.env
+
 # Generated OpenAPI specification
 openapi.json
 

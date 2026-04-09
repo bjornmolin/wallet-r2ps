@@ -2,10 +2,10 @@ use base64::Engine;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use clap::{Parser, Subcommand};
 use cryptoki::object::ObjectClass;
-use rust_r2ps_worker::application::port::outgoing::hsm_spi_port::HsmSpiPort;
-use rust_r2ps_worker::domain::value_objects::r2ps::Curve;
-use rust_r2ps_worker::infrastructure::adapters::outgoing::hsm_wrapper::{HsmWrapper, Pkcs11Config};
-use rust_r2ps_worker::infrastructure::config::{jose_utils, key_derivation};
+use hsm_worker::application::port::outgoing::hsm_spi_port::HsmSpiPort;
+use hsm_worker::domain::value_objects::r2ps::Curve;
+use hsm_worker::infrastructure::adapters::outgoing::hsm_wrapper::{HsmWrapper, Pkcs11Config};
+use hsm_worker::infrastructure::config::{jose_utils, key_derivation};
 
 #[derive(Parser)]
 #[command(name = "digg-hsm-keytool", about = "Manage DIGG wallet HSM keys")]

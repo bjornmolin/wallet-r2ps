@@ -1,4 +1,4 @@
-# Rust R2PS worker
+# HSM Worker
 
 ## dev tools
 
@@ -35,7 +35,7 @@ brew install \
 
 ### softhsm tokens
 
-Start the ecosystem (in docker compose) including the rust-r2ps-worker by running:
+Start the ecosystem (in docker compose) including the hsm-worker by running:
 An AES unwrap key is created in softhsm on first start of the container in a persistent volume.
 The same key is required in local environment in order to use same HsmState as in docker compose.
 
@@ -110,7 +110,7 @@ Basic initial setup should be found in `.env-mac` and `.env_linux`
 
 ## build and run
 
-Then build and run the rust-r2ps-worker with:
+Then build and run the hsm-worker with:
 
 ```bash
 cargo run

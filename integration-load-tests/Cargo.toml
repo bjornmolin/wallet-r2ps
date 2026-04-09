@@ -11,9 +11,9 @@ path = "src/main.rs"
 
 [dependencies]
 # Shared domain types from the HSM worker
-rust-r2ps-worker = { path = "../rust-r2ps-worker" }
+hsm-worker = { path = "../hsm-worker" }
 
-# OPAQUE protocol (must match rust-r2ps-worker + opaque-ke-wasm)
+# OPAQUE protocol (must match hsm-worker + opaque-ke-wasm)
 opaque-ke = { version = "4.0.1", features = ["std"] }
 p256 = { version = "0.13", features = ["hash2curve", "voprf", "ecdh", "jwk", "ecdsa", "pem"] }
 elliptic-curve = { version = "0.13", features = ["sec1", "jwk"] }
@@ -22,7 +22,7 @@ sha2 = "0.10"
 hkdf = "0.12"
 rand = "0.8"
 
-# JOSE (JWS / JWE) — same version as rust-r2ps-worker
+# JOSE (JWS / JWE) — same version as hsm-worker
 josekit = "0.10.3"
 
 # HTTP client

@@ -29,9 +29,9 @@ services:
     networks:
       - wallet-network
 
-  rust-r2ps-worker:
+  hsm-worker:
     build:
-      context: ./rust-r2ps-worker
+      context: ./hsm-worker
       dockerfile: Containerfile
     env_file:
       - .env.softhsm

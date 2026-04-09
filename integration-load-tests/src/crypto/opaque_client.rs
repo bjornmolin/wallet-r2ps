@@ -4,7 +4,7 @@
 
 //! Client-side OPAQUE protocol operations (registration + login).
 //!
-//! Uses the same cipher suite as the server (rust-r2ps-worker) and the
+//! Uses the same cipher suite as the server (hsm-worker) and the
 //! Android/Swift access mechanism libraries:
 //! - OPRF: NIST P-256
 //! - Key Exchange: Triple-DH (P-256, SHA-256)
