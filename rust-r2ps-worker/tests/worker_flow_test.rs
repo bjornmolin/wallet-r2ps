@@ -7,9 +7,10 @@ use mockall::mock;
 use p256::SecretKey;
 use p256::elliptic_curve::sec1::ToEncodedPoint;
 use p256::pkcs8::{EncodePrivateKey, EncodePublicKey};
+use rust_r2ps_worker::application::JosePort;
 use rust_r2ps_worker::application::WorkerPorts;
 use rust_r2ps_worker::application::WorkerRequestUseCase;
-use rust_r2ps_worker::application::port::outgoing::hsm_spi_port::HsmSpiPort;
+use rust_r2ps_worker::application::port::outgoing::hsm_spi_port::{DerivedSecret, HsmSpiPort};
 use rust_r2ps_worker::application::port::outgoing::pake_port::{
     PakeError, PakePort, RegistrationResult,
 };
@@ -44,7 +45,7 @@ mock! {
             &self, upload_bytes: &[u8],
         ) -> Result<RegistrationResult, PakeError>;
         fn authentication_start(
-            &self, request_bytes: &[u8], password_file_bytes: &[u8], client_id: &str,
+            &self, request_bytes: &[u8], password_file_bytes: &PasswordFileEntry, client_id: &str,
         ) -> Result<(PakePayloadVector, PendingLoginState), PakeError>;
         fn authentication_finish(
             &self, finalization_bytes: &[u8], pending_state: &PendingLoginState, client_id: &str,
@@ -60,6 +61,11 @@ mock! {
     impl HsmSpiPort for HsmImpl {
         fn generate_key(&self, alias: &str, curve: &Curve) -> Result<HsmKey, Box<dyn std::error::Error>>;
         fn sign(&self, key: &HsmKey, sign_payload: &[u8]) -> Result<Vec<u8>, cryptoki::error::Error>;
+        fn derive_key(
+            &self,
+            root_key_label: &str,
+            domain_separator: &str,
+        ) -> Result<DerivedSecret, cryptoki::error::Error>;
     }
 }
 
@@ -75,6 +81,10 @@ impl HsmSpiPort for NoOpHsm {
 
     fn sign(&self, _: &HsmKey, _: &[u8]) -> Result<Vec<u8>, cryptoki::error::Error> {
         unimplemented!("NoOpHsm: sign not used in authenticate flow tests")
+    }
+
+    fn derive_key(&self, _: &str, _: &str) -> Result<DerivedSecret, cryptoki::error::Error> {
+        unimplemented!("NoOpHsm: derive_key not used in authenticate flow tests")
     }
 }
 
@@ -113,15 +123,12 @@ fn setup_server_crypto() -> (
     String,
 ) {
     let secret = SecretKey::random(&mut rand::thread_rng());
-    let private_pem_str = secret.to_pkcs8_pem(Default::default()).unwrap().to_string();
     let pub_pem_str = secret
         .public_key()
         .to_public_key_pem(Default::default())
         .unwrap()
         .to_string();
-    let private_pem = pem::parse(private_pem_str.as_bytes()).unwrap();
-    let pub_pem = pem::parse(pub_pem_str.as_bytes()).unwrap();
-    let jose = Arc::new(JoseAdapter::new(&pub_pem, &private_pem).unwrap());
+    let jose = Arc::new(JoseAdapter::new(secret).unwrap());
     let verifier = ES256.verifier_from_pem(pub_pem_str.as_bytes()).unwrap();
     (jose, verifier, pub_pem_str)
 }
@@ -196,6 +203,7 @@ fn make_synthetic_hsm_key(kid: &str) -> HsmKey {
             y: BASE64_URL_SAFE_NO_PAD.encode(ec_point.y().unwrap()),
             kid: kid.to_string(),
         },
+        wrap_key_label: String::new(),
         created_at: chrono::Utc::now(),
     }
 }
@@ -305,6 +313,7 @@ impl TestFixture {
             version: 1,
             session_id,
             context: "hsm".to_string(),
+            server_kid: Some(self.server_jose.jws_kid().to_string()),
             inner_jwe: Some(TypedJwe::new(inner_jwe)),
         };
         let outer_jws = device_sign_jwt(
@@ -365,7 +374,7 @@ fn make_fixture_with_hsm_keys(
             public_key: device_pub_jwk,
             password_files: vec![PasswordFileEntry {
                 password_file: PasswordFile(vec![1, 2, 3]),
-                server_identifier: "cloud-wallet.digg.se".to_string(),
+                opaque_domain_separator: "cloud-wallet.digg.se".to_string(),
                 created_at: "2026-01-01T00:00:00Z".to_string(),
             }],
             dev_authorization_code: Some("test-code".to_string()),
@@ -375,12 +384,13 @@ fn make_fixture_with_hsm_keys(
     let state_jws = state.sign(&*server_jose).unwrap();
 
     let ports = WorkerPorts {
+        jose: server_jose.clone(),
         session_state: shared_cache.clone(),
         hsm,
         worker_response: response_sink.clone(),
         pake,
     };
-    let service = WorkerService::new(server_jose.clone(), ports);
+    let service = WorkerService::new(ports, false);
 
     TestFixture {
         service,
@@ -471,7 +481,7 @@ fn test_register_start_finish() {
         mock.expect_registration_finish().once().returning(|_| {
             Ok(RegistrationResult {
                 password_file: PasswordFile(vec![0x10, 0x20, 0x30, 0x40]),
-                server_identifier: "test-server".to_string(),
+                opaque_domain_separator: "test-server".to_string(),
             })
         });
         Arc::new(mock)
@@ -530,7 +540,7 @@ fn test_register_start_finish() {
         "password file bytes must match the mock RegistrationResult"
     );
     assert_eq!(
-        updated_state.device_keys[0].password_files[0].server_identifier,
+        updated_state.device_keys[0].password_files[0].opaque_domain_separator,
         "test-server"
     );
     assert!(
