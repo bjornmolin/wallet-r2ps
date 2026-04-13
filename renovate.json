@@ -1,0 +1,32 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "local>diggsweden/.github:renovate-base",
+    ":maintainLockFilesWeekly"
+  ],
+  "enabledManagers": [
+    "github-actions",
+    "cargo",
+    "dockerfile"
+  ],
+  "packageRules": [
+    {
+      "description": "Rust dependencies - Major updates",
+      "matchManagers": ["cargo"],
+      "matchUpdateTypes": ["major"],
+      "addLabels": ["rust", "dependencies", "major-update"]
+    },
+    {
+      "description": "Rust dependencies - Non-major updates",
+      "matchManagers": ["cargo"],
+      "matchUpdateTypes": ["minor", "patch"],
+      "addLabels": ["rust", "dependencies"],
+      "groupName": "rust non-major"
+    },
+    {
+      "description": "Docker base images",
+      "matchManagers": ["dockerfile"],
+      "addLabels": ["docker", "infrastructure"]
+    }
+  ]
+}

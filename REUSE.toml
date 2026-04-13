@@ -17,6 +17,7 @@ path = [
   "hsm-worker/.env_linux",
   "wallet-bff/.env_example",
   "hsm-worker/softhsm/softhsm2.conf",
+  "renovate.json",
 ]
 SPDX-FileCopyrightText = "2026 Digg - Agency for Digital Government"
 SPDX-License-Identifier = "EUPL-1.2"

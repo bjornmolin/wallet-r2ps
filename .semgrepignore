@@ -1,0 +1,8 @@
+# SPDX-FileCopyrightText: 2026 Digg - Agency for Digital Government
+#
+# SPDX-License-Identifier: CC0-1.0
+
+# OpenGrep / Semgrep ignore patterns
+# The openapi_to_markdown.py docs generator contains an example JWT token
+# in its markdown template output — not a real secret.
+hsm-worker/docs/openapi_to_markdown.py

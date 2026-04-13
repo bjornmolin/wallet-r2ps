@@ -8,7 +8,7 @@ SPDX-License-Identifier: EUPL-1.2
 
 [Introduction](introduction.md)
 
-# API Reference
+## API Reference
 
 - [API Reference](api-reference/README.md)
   - [HsmWorkerRequestDto](api-reference/hsm-worker-request-dto.md)

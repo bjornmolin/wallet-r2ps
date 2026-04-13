@@ -1,0 +1,8 @@
+# SPDX-FileCopyrightText: 2025 Digg - Agency for Digital Government
+#
+# SPDX-License-Identifier: CC0-1.0
+
+ignored:
+  - DL3008 # Pin versions in apt-get install
+  - DL3015 # Avoid additional packages (--no-install-recommends)
+  - DL3059 # Multiple consecutive RUN instructions

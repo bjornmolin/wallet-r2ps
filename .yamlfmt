@@ -1,0 +1,14 @@
+# SPDX-FileCopyrightText: 2025 Digg - Agency for Digital Government
+#
+# SPDX-License-Identifier: CC0-1.0
+
+# yamlfmt configuration
+# Uses gitignore-based excludes to skip Rust build artifacts (target/ dirs)
+
+gitignore_excludes: true
+gitignore_path: .gitignore
+
+formatter:
+  type: basic
+  retain_line_breaks_single: true
+  drop_merge_tag: true
