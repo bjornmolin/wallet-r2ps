@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 Digg - Agency for Digital Government
+//
+// SPDX-License-Identifier: EUPL-1.2
+
 pub mod hsm_wrapper;
 pub mod jose_adapter;
 pub mod opaque_pake_adapter;

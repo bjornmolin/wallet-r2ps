@@ -1,3 +1,9 @@
+<!--
+SPDX-FileCopyrightText: 2026 Digg - Agency for Digital Government
+
+SPDX-License-Identifier: EUPL-1.2
+-->
+
 # LoA high with r2ps
 
 ```plantuml

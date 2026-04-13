@@ -1,0 +1,22 @@
+version = 1
+
+[[annotations]]
+path = [
+  "hsm-worker/server-opaque-key.jwk",
+  "hsm-worker/Cargo.lock",
+  "integration-load-tests/Cargo.lock",
+  "wallet-bff/Cargo.lock",
+  ".gitignore",
+  "hsm-worker/.gitignore",
+  "integration-load-tests/.gitignore",
+  ".env.opaque",
+  ".env.softhsm",
+  ".env_linux",
+  ".env_mac",
+  "hsm-worker/.env-mac",
+  "hsm-worker/.env_linux",
+  "wallet-bff/.env_example",
+  "hsm-worker/softhsm/softhsm2.conf",
+]
+SPDX-FileCopyrightText = "2026 Digg - Agency for Digital Government"
+SPDX-License-Identifier = "EUPL-1.2"

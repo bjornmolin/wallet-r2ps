@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 Digg - Agency for Digital Government
+//
+// SPDX-License-Identifier: EUPL-1.2
+
 use crate::domain::{
     DeviceHsmState, DeviceKeyEntry, EcPublicJwk, HsmKey, PasswordFile, PasswordFileEntry,
     ServiceRequestError, WrappedPrivateKey,

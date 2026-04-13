@@ -1,3 +1,9 @@
+<!--
+SPDX-FileCopyrightText: 2026 Digg - Agency for Digital Government
+
+SPDX-License-Identifier: EUPL-1.2
+-->
+
 # Introduction
 
 This documentation describes the domain model for the R2PS (Remote to Phone Signing) HSM Worker service.

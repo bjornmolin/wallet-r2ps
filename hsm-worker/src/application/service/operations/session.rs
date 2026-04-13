@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 Digg - Agency for Digital Government
+//
+// SPDX-License-Identifier: EUPL-1.2
+
 use super::{OperationContext, OperationResult, ServiceOperation, SessionTransition};
 use crate::domain::value_objects::r2ps::PakeResponse;
 use crate::domain::{InnerResponseData, ServiceRequestError};

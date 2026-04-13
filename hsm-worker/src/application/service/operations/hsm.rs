@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 Digg - Agency for Digital Government
+//
+// SPDX-License-Identifier: EUPL-1.2
+
 use super::{OperationContext, OperationResult, ServiceOperation, SessionTransition};
 use crate::application::hsm_spi_port::HsmSpiPort;
 use crate::application::port::outgoing::session_state_spi_port::SessionState;

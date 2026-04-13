@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 Digg - Agency for Digital Government
+//
+// SPDX-License-Identifier: EUPL-1.2
+
 use crate::application::service::operations::hsm::MessageVector;
 use crate::application::service::operations::hsm::SignatureVector;
 use crate::define_byte_vector;

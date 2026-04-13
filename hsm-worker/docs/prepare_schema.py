@@ -1,4 +1,9 @@
 #!/usr/bin/env python3
+
+# SPDX-FileCopyrightText: 2026 Digg - Agency for Digital Government
+#
+# SPDX-License-Identifier: EUPL-1.2
+
 """
 Prepare a JSON Schema document (domain-schema.json) for json-schema-for-humans
 from the project's OpenAPI specification (openapi.json).
@@ -44,7 +49,7 @@ import json
 import re
 import sys
 
-INPUT  = sys.argv[1] if len(sys.argv) > 1 else "openapi.json"
+INPUT = sys.argv[1] if len(sys.argv) > 1 else "openapi.json"
 OUTPUT = sys.argv[2] if len(sys.argv) > 2 else "docs/domain-schema.json"
 
 
@@ -54,7 +59,7 @@ def is_wrapper(name: str) -> bool:
 
 def wrapper_title(name: str) -> str:
     """Return a generic-syntax title, e.g. 'Jws<DeviceHsmState>'."""
-    if name.startswith("Jws_"): 
+    if name.startswith("Jws_"):
         return f"Jws<{name[4:]}>"
     if name.startswith("InnerJwe_"):
         return f"InnerJwe<{name[9:]}>"
@@ -97,7 +102,7 @@ info = doc.get("info", {})
 
 # Split into wrapper schemas and everything else.
 wrappers = {}
-structs  = {}
+structs = {}
 for name, schema in raw_schemas.items():
     if is_wrapper(name):
         enhanced = enhance_wrapper(schema)
@@ -111,18 +116,16 @@ for name, schema in raw_schemas.items():
 ordered = {**wrappers, **structs}
 
 root = {
-    "$schema":     "https://json-schema.org/draft/2020-12/schema",
-    "title":       info.get("title", "Domain Model"),
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "title": info.get("title", "Domain Model"),
     "description": info.get("description", ""),
-    "type":        "object",
-    "properties":  {k: {"$ref": f"#/$defs/{k}"} for k in ordered},
-    "$defs":       ordered,
+    "type": "object",
+    "properties": {k: {"$ref": f"#/$defs/{k}"} for k in ordered},
+    "$defs": ordered,
 }
 
 # Rewrite all $ref paths from OpenAPI convention to JSON Schema $defs.
-text = json.dumps(root, indent=2).replace(
-    "#/components/schemas/", "#/$defs/"
-)
+text = json.dumps(root, indent=2).replace("#/components/schemas/", "#/$defs/")
 
 with open(OUTPUT, "w") as f:
     f.write(text)

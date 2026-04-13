@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 Digg - Agency for Digital Government
+//
+// SPDX-License-Identifier: EUPL-1.2
+
 use crate::application::port::outgoing::jose_port::{JosePort, JweDecryptionKey};
 use crate::domain::value_objects::r2ps::{InnerRequest, OperationId};
 use josekit::jwe::ECDH_ES;

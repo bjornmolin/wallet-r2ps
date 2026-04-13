@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 Digg - Agency for Digital Government
+//
+// SPDX-License-Identifier: EUPL-1.2
+
 use crate::application::port::outgoing::jose_port::{JoseError, MockJosePort};
 use crate::application::service::worker_service::decode::RequestDecoder;
 use crate::application::service::worker_service::error::{OuterError, UpstreamError, WorkerError};

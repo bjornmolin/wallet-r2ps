@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 Digg - Agency for Digital Government
+//
+// SPDX-License-Identifier: EUPL-1.2
+
 use tracing::debug;
 
 /// Debug logs payload data, formatting as JSON if it appears to be JSON, otherwise as hex

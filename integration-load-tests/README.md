@@ -1,3 +1,9 @@
+<!--
+SPDX-FileCopyrightText: 2026 Digg - Agency for Digital Government
+
+SPDX-License-Identifier: EUPL-1.2
+-->
+
 # integration-load-tests
 
 Integration and load testing tool for the R2PS wallet system. Implements a native Rust client with full OPAQUE protocol support, PIN stretching, and JWS/JWE envelope handling — matching the Android/Swift access mechanism libraries.

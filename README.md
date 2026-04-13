@@ -1,3 +1,9 @@
+<!--
+SPDX-FileCopyrightText: 2026 Digg - Agency for Digital Government
+
+SPDX-License-Identifier: EUPL-1.2
+-->
+
 # wallet-r2ps
 
 A Dockerized Rust worker designed for R2PS processing with SoftHSM token integration and Kafka messaging.

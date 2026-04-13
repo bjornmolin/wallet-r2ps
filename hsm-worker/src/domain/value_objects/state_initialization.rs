@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 Digg - Agency for Digital Government
+//
+// SPDX-License-Identifier: EUPL-1.2
+
 use crate::domain::value_objects::typed_jws::TypedJws;
 use crate::domain::{DeviceHsmState, EcPublicJwk};
 use serde::{Deserialize, Serialize};

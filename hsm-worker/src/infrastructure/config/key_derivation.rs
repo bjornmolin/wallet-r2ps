@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 Digg - Agency for Digital Government
+//
+// SPDX-License-Identifier: EUPL-1.2
+
 use hkdf::Hkdf;
 use p256::SecretKey;
 use p256::elliptic_curve::hash2curve::FromOkm;

@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 Digg - Agency for Digital Government
+//
+// SPDX-License-Identifier: EUPL-1.2
+
 use base64::Engine;
 use base64::prelude::BASE64_URL_SAFE_NO_PAD;
 use hsm_worker::application::JosePort;
