@@ -1,7 +1,10 @@
+# SPDX-FileCopyrightText: 2026 Digg - Agency for Digital Government
+#
+# SPDX-License-Identifier: EUPL-1.2
+
 name: r2ps-dev
 
 services:
-
   wallet-bff:
     build:
       context: ./wallet-bff
@@ -51,7 +54,7 @@ services:
     image: valkey/valkey:8.0.2-alpine3.21
     ports:
       - 6379:6379
-    command: [ "valkey-server", "/usr/local/etc/valkey/valkey.conf" ]
+    command: ["valkey-server", "/usr/local/etc/valkey/valkey.conf"]
     volumes:
       - ./config/valkey.conf:/usr/local/etc/valkey/valkey.conf
     networks:
@@ -71,7 +74,7 @@ services:
       KAFKA_DEFAULT_REPLICATION_FACTOR: 3
       KAFKA_MIN_INSYNC_REPLICAS: 2
       KAFKA_LOG_DIRS: /tmp/kraft-combined-logs
-      KAFKA_AUTO_CREATE_TOPICS_ENABLE: 'false'
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
 
   kafka-1:
     <<: *kafka-common

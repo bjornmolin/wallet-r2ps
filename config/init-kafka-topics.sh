@@ -1,5 +1,9 @@
 #!/bin/sh
 
+# SPDX-FileCopyrightText: 2026 2026 Digg - Agency for Digital Government
+#
+# SPDX-License-Identifier: EUPL-1.2
+
 echo 'Waiting for Kafka cluster...'
 
 /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka-1:19092 --list

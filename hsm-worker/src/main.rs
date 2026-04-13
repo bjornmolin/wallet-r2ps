@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 Digg - Agency for Digital Government
+//
+// SPDX-License-Identifier: EUPL-1.2
+
 use hsm_worker::run;
 use tracing::instrument;
 use tracing_subscriber::layer::SubscriberExt;

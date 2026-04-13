@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 2026 Digg - Agency for Digital Government
+//
+// SPDX-License-Identifier: EUPL-1.2
+
 use crate::application::WorkerRequestUseCase;
 use crate::infrastructure::bootstrap::build_services;
 use crate::infrastructure::config::app_config::AppConfig;

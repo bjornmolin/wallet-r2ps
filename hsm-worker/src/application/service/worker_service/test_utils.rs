@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 Digg - Agency for Digital Government
+//
+// SPDX-License-Identifier: EUPL-1.2
+
 use crate::application::hsm_spi_port::MockHsmSpiPort;
 use crate::application::jose_port::{JoseError, JosePort, JweDecryptionKey, JweEncryptionKey};
 use crate::application::pake_port::MockPakePort;

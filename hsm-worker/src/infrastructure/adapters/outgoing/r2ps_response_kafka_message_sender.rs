@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 Digg - Agency for Digital Government
+//
+// SPDX-License-Identifier: EUPL-1.2
+
 use crate::application::{WorkerResponseError, WorkerResponseSpiPort};
 use crate::domain::WorkerResponse;
 use crate::infrastructure::KafkaConfig;

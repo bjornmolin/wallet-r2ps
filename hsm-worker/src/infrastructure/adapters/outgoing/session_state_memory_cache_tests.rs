@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 Digg - Agency for Digital Government
+//
+// SPDX-License-Identifier: EUPL-1.2
+
 use crate::application::port::outgoing::session_state_spi_port::{
     PendingLoginState, SessionKey, SessionState, SessionStateError, SessionStateSpiPort,
     SessionTransition,
