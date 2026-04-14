@@ -3,5 +3,6 @@
 // SPDX-License-Identifier: EUPL-1.2
 
 pub mod device_state;
+pub mod nonce;
 pub mod pending_context;
 pub mod response_sink;

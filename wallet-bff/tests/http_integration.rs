@@ -11,7 +11,8 @@ use tower::ServiceExt;
 
 use wallet_bff::application::port::incoming::ResponseUseCase;
 use wallet_bff::application::port::outgoing::{
-    DeviceStatePort, PendingContextPort, RequestSenderPort, StateInitCachePort, StateInitSenderPort,
+    DeviceStatePort, NoncePort, PendingContextPort, RequestSenderPort, StateInitCachePort,
+    StateInitSenderPort,
 };
 use wallet_bff::domain::{
     CachedResponse, HsmWorkerRequest, HsmWorkerResponse, OuterResponse, PendingRequestContext,
@@ -19,6 +20,7 @@ use wallet_bff::domain::{
 };
 use wallet_bff::infrastructure::adapters::incoming::web;
 use wallet_bff::infrastructure::adapters::incoming::web::handlers::AppState;
+use wallet_bff::infrastructure::adapters::incoming::web::replay_protection::ReplayProtectionState;
 
 // ---------------------------------------------------------------------------
 // Hand-written test mocks (consistent with existing response_service test style)
@@ -80,6 +82,15 @@ impl ResponseUseCase for MockResponseUseCase {
         _timeout_ms: u64,
     ) -> Option<CachedResponse> {
         self.sync_response.clone()
+    }
+}
+
+struct MockNoncePort;
+
+#[async_trait::async_trait]
+impl NoncePort for MockNoncePort {
+    async fn try_store(&self, _nonce: &str, _ttl_seconds: u64) -> Result<bool, String> {
+        Ok(true) // always accept in tests
     }
 }
 
@@ -154,8 +165,13 @@ fn make_test_app(cfg: TestAppConfig) -> TestContext {
         response_events_template_url: "http://localhost/hsm/v1/requests/%s".to_string(),
     });
 
+    let rp_state = Arc::new(ReplayProtectionState {
+        nonce_port: Arc::new(MockNoncePort),
+        nonce_ttl_seconds: 600,
+    });
+
     TestContext {
-        app: web::router(state),
+        app: web::router(state, rp_state),
         sent_requests,
     }
 }
@@ -192,6 +208,11 @@ fn ok_state_init_response() -> StateInitResponse {
     }
 }
 
+fn nonce_query() -> String {
+    let nonce = uuid::Uuid::new_v4();
+    format!("nonce={}", nonce)
+}
+
 async fn read_body_json(response: axum::response::Response) -> serde_json::Value {
     let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
         .await
@@ -217,7 +238,7 @@ async fn test_post_hsm_request_sends_to_kafka() {
         .oneshot(
             Request::builder()
                 .method("POST")
-                .uri("/hsm/v1/requests")
+                .uri(format!("/hsm/v1/requests?{}", nonce_query()))
                 .header("content-type", "application/json")
                 .body(Body::from(serde_json::to_string(&body).unwrap()))
                 .unwrap(),
@@ -249,7 +270,7 @@ async fn test_post_hsm_request_sync_returns_result() {
         .oneshot(
             Request::builder()
                 .method("POST")
-                .uri("/hsm/v1/requests")
+                .uri(format!("/hsm/v1/requests?{}", nonce_query()))
                 .header("content-type", "application/json")
                 .body(Body::from(serde_json::to_string(&body).unwrap()))
                 .unwrap(),
@@ -283,7 +304,7 @@ async fn test_post_hsm_request_sync_timeout_returns_pending() {
         .oneshot(
             Request::builder()
                 .method("POST")
-                .uri("/hsm/v1/requests")
+                .uri(format!("/hsm/v1/requests?{}", nonce_query()))
                 .header("content-type", "application/json")
                 .body(Body::from(serde_json::to_string(&body).unwrap()))
                 .unwrap(),
@@ -317,7 +338,7 @@ async fn test_post_hsm_request_missing_device_state() {
         .oneshot(
             Request::builder()
                 .method("POST")
-                .uri("/hsm/v1/requests")
+                .uri(format!("/hsm/v1/requests?{}", nonce_query()))
                 .header("content-type", "application/json")
                 .body(Body::from(serde_json::to_string(&body).unwrap()))
                 .unwrap(),
@@ -488,7 +509,7 @@ async fn test_post_legacy_operations_with_result_returns_jws_string() {
         .oneshot(
             Request::builder()
                 .method("POST")
-                .uri("/hsm/v1/operations")
+                .uri(format!("/hsm/v1/operations?{}", nonce_query()))
                 .header("content-type", "application/json")
                 .body(Body::from(serde_json::to_string(&body).unwrap()))
                 .unwrap(),
@@ -525,7 +546,7 @@ async fn test_post_legacy_operations_timeout_returns_408() {
         .oneshot(
             Request::builder()
                 .method("POST")
-                .uri("/hsm/v1/operations")
+                .uri(format!("/hsm/v1/operations?{}", nonce_query()))
                 .header("content-type", "application/json")
                 .body(Body::from(serde_json::to_string(&body).unwrap()))
                 .unwrap(),
@@ -549,7 +570,7 @@ async fn test_malformed_json_returns_problem_json() {
         .oneshot(
             Request::builder()
                 .method("POST")
-                .uri("/hsm/v1/requests")
+                .uri(format!("/hsm/v1/requests?{}", nonce_query()))
                 .header("content-type", "application/json")
                 .body(Body::from("not valid json {{{"))
                 .unwrap(),

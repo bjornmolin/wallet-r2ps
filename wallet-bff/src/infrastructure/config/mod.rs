@@ -38,6 +38,8 @@ pub struct AppConfig {
     pub state_init_timeout_ms: u64,
     /// Response cache TTL in seconds
     pub response_ttl_seconds: u64,
+    /// Replay-protection: nonce TTL in seconds (default 600, matches session TTL)
+    pub nonce_ttl_seconds: u64,
     /// URL template for the polling endpoint (%s = correlationId)
     pub response_events_template_url: String,
 }
@@ -59,6 +61,7 @@ impl AppConfig {
             .set_default("sync_timeout_ms", 3000)?
             .set_default("state_init_timeout_ms", 5000)?
             .set_default("response_ttl_seconds", 600)?
+            .set_default("nonce_ttl_seconds", 600)?
             .set_default(
                 "response_events_template_url",
                 "http://localhost:8088/hsm/v1/requests/%s",

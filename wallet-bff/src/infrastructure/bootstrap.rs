@@ -10,13 +10,14 @@ use crate::application::service::ResponseService;
 use crate::infrastructure::adapters::incoming::kafka::{
     r2ps_response_consumer, state_init_cache::StateInitResponseCache, state_init_response_consumer,
 };
+use crate::infrastructure::adapters::incoming::web::replay_protection::ReplayProtectionState;
 use crate::infrastructure::adapters::incoming::web::{self, handlers::AppState};
 use crate::infrastructure::adapters::outgoing::kafka::request_sender::{
     KafkaRequestSender, KafkaStateInitSender,
 };
 use crate::infrastructure::adapters::outgoing::redis::{
-    device_state::DeviceStateRedisAdapter, pending_context::PendingContextRedisAdapter,
-    response_sink::ResponseSinkRedisAdapter,
+    device_state::DeviceStateRedisAdapter, nonce::NonceRedisAdapter,
+    pending_context::PendingContextRedisAdapter, response_sink::ResponseSinkRedisAdapter,
 };
 use crate::infrastructure::config::AppConfig;
 
@@ -40,6 +41,7 @@ pub async fn run() {
         conn_mgr.clone(),
         config.response_ttl_seconds,
     ));
+    let nonce_port = Arc::new(NonceRedisAdapter::new(conn_mgr.clone()));
 
     // Kafka producers
     let request_sender_port = Arc::new(KafkaRequestSender::new(
@@ -90,7 +92,12 @@ pub async fn run() {
         response_events_template_url: config.response_events_template_url.clone(),
     });
 
-    let router = web::router(app_state);
+    let rp_state = Arc::new(ReplayProtectionState {
+        nonce_port,
+        nonce_ttl_seconds: config.nonce_ttl_seconds,
+    });
+
+    let router = web::router(app_state, rp_state);
 
     let bind_addr = format!("{}:{}", config.server_host, config.server_port);
     let listener = tokio::net::TcpListener::bind(&bind_addr)
