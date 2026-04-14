@@ -4,10 +4,12 @@
 
 #[cfg(test)]
 mod tests {
-    use crate::application::OuterError;
     use crate::application::port::outgoing::jose_port::{JoseError, MockJosePort};
     use crate::application::port::outgoing::session_state_spi_port::SessionKey;
-    use crate::domain::{InnerRequest, OperationId, OuterRequest, SessionId, TypedJwe};
+    use crate::application::{OuterError, UpstreamError};
+    use crate::domain::{
+        EcPublicJwk, InnerRequest, OperationId, OuterRequest, SessionId, TypedJwe,
+    };
     use rstest::rstest;
 
     fn create_inner_request_json(operation: OperationId) -> Vec<u8> {
@@ -188,5 +190,28 @@ mod tests {
         assert_eq!(inner_request.request_type, operation);
         assert_eq!(inner_request.version, 1);
         assert_eq!(inner_request.request_counter, 42);
+    }
+
+    fn dummy_ec_public_jwk() -> EcPublicJwk {
+        EcPublicJwk {
+            kty: "EC".to_string(),
+            crv: "P-256".to_string(),
+            x: "x".to_string(),
+            y: "y".to_string(),
+            kid: "kid".to_string(),
+        }
+    }
+
+    #[test]
+    fn test_from_jws_invalid_json_returns_outer_jws_invalid() {
+        let mut mock_jose = MockJosePort::new();
+        mock_jose
+            .expect_jws_verify_device()
+            .returning(|_, _| Ok(b"not valid json".to_vec()));
+
+        let key = dummy_ec_public_jwk();
+        let result = OuterRequest::from_jws("some.jws.token", &mock_jose, &key);
+
+        assert!(matches!(result, Err(UpstreamError::OuterJwsInvalid)));
     }
 }

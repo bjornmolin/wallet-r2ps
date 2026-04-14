@@ -6,7 +6,7 @@ use crate::application::port::outgoing::jose_port;
 use crate::domain::{DeviceHsmState, TypedJws};
 use tracing::error;
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum DeviceStateError {
     SerializeError,
     SignError,

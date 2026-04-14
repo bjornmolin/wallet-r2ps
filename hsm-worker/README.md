@@ -130,7 +130,7 @@ cargo run
 cargo test
 ```
 
-### Integration tests (Tier 2)
+### Integration tests
 
 Integration tests use [testcontainers](https://crates.io/crates/testcontainers) to spin up real Kafka containers. They are gated with `#[ignore]` and require Docker.
 

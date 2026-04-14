@@ -8,7 +8,7 @@ use crate::application::port::outgoing::session_state_spi_port::{
 };
 use crate::application::service::operations::authentication::{
     AuthenticateFinishOperation, AuthenticateStartOperation, PinChangeFinishOperation,
-    RegisterFinishOperation,
+    PinChangeStartOperation, RegisterFinishOperation, RegisterStartOperation,
 };
 use crate::application::service::operations::{
     OperationContext, ServiceOperation, SessionTransition,
@@ -174,6 +174,20 @@ fn state_with_auth_code(code: &str) -> DeviceHsmState {
     }
 }
 
+fn register_start_inner_request(auth_code: Option<&str>) -> InnerRequest {
+    let pake_req = PakeRequest {
+        authorization: auth_code.map(|s| s.to_string()),
+        purpose: None,
+        data: PakePayloadVector::new(vec![1, 2, 3]),
+    };
+    InnerRequest {
+        version: 1,
+        request_type: OperationId::RegisterStart,
+        request_counter: 0,
+        data: Some(serde_json::to_string(&pake_req).unwrap()),
+    }
+}
+
 fn register_finish_inner_request(auth_code: &str) -> InnerRequest {
     let pake_req = PakeRequest {
         authorization: Some(auth_code.to_string()),
@@ -257,6 +271,69 @@ fn register_finish_reuse_of_consumed_auth_code_fails() {
 }
 
 // -----------------------------------------------------------------------------
+// RegisterStartOperation
+// -----------------------------------------------------------------------------
+
+/// Both missing and wrong auth codes must be rejected with the same error variant.
+#[rstest]
+#[case(None)]
+#[case(Some("wrong"))]
+fn register_start_auth_code_rejected(#[case] authorization: Option<&'static str>) {
+    let op = RegisterStartOperation::new(Arc::new(MockPakePort::new()));
+    let context = base_context(
+        state_with_auth_code("abc123"),
+        register_start_inner_request(authorization),
+    );
+
+    let result = op.execute(context);
+
+    assert!(
+        matches!(result, Err(ServiceRequestError::InvalidAuthorizationCode)),
+        "expected InvalidAuthorizationCode for authorization: {authorization:?}"
+    );
+}
+
+#[test]
+fn register_start_unknown_key_fails() {
+    let op = RegisterStartOperation::new(Arc::new(MockPakePort::new()));
+    let state = DeviceHsmState {
+        version: 1,
+        device_keys: vec![],
+        hsm_keys: vec![],
+    };
+    // authorization must be Some to reach the key-lookup branch
+    let context = base_context(state, register_start_inner_request(Some("any-code")));
+
+    let result = op.execute(context);
+
+    assert!(matches!(result, Err(ServiceRequestError::UnknownKey)));
+}
+
+#[test]
+fn register_start_matching_auth_code_succeeds() {
+    const AUTH_CODE: &str = "abc123";
+
+    let mut mock = MockPakePort::new();
+    mock.expect_registration_start()
+        .once()
+        .returning(|_, _| Ok(PakePayloadVector::new(vec![4, 5, 6])));
+    let op = RegisterStartOperation::new(Arc::new(mock));
+
+    let context = base_context(
+        state_with_auth_code(AUTH_CODE),
+        register_start_inner_request(Some(AUTH_CODE)),
+    );
+
+    let result = op.execute(context);
+
+    assert!(result.is_ok(), "expected Ok");
+    assert!(
+        result.unwrap().session_transition.is_none(),
+        "RegisterStart must not produce a session transition"
+    );
+}
+
+// -----------------------------------------------------------------------------
 // PinChangeFinishOperation
 // -----------------------------------------------------------------------------
 
@@ -334,5 +411,49 @@ fn pin_change_finish_requires_active_changing_pin_state(
     assert!(
         matches!(result, Err(ServiceRequestError::InvalidOperation)),
         "expected InvalidOperation for label: {_label}"
+    );
+}
+
+// -----------------------------------------------------------------------------
+// PinChangeStartOperation
+// -----------------------------------------------------------------------------
+
+#[test]
+fn pin_change_start_without_session_fails() {
+    let op = PinChangeStartOperation::new(Arc::new(MockPakePort::new()));
+    // base_context has session_id: None by default
+    let context = base_context(
+        state_without_password_file(),
+        pake_inner_request(OperationId::ChangePinStart),
+    );
+
+    let result = op.execute(context);
+
+    assert!(matches!(result, Err(ServiceRequestError::UnknownSession)));
+}
+
+#[test]
+fn pin_change_start_with_session_succeeds() {
+    let mut mock = MockPakePort::new();
+    mock.expect_registration_start()
+        .once()
+        .returning(|_, _| Ok(PakePayloadVector::new(vec![4, 5, 6])));
+    let op = PinChangeStartOperation::new(Arc::new(mock));
+
+    let mut context = base_context(
+        state_without_password_file(),
+        pake_inner_request(OperationId::ChangePinStart),
+    );
+    context.session_id = Some(SessionId::new());
+
+    let result = op.execute(context);
+
+    assert!(result.is_ok(), "expected Ok");
+    assert!(
+        matches!(
+            result.unwrap().session_transition,
+            Some(SessionTransition::BeginChangingPin)
+        ),
+        "expected BeginChangingPin transition"
     );
 }
