@@ -1,8 +1,13 @@
+# SPDX-FileCopyrightText: 2026 Digg - Agency for Digital Government
+#
+# SPDX-License-Identifier: EUPL-1.2
+
 version = 1
 
 [[annotations]]
 path = [
   "hsm-worker/server-opaque-key.jwk",
+  "Cargo.lock",
   "hsm-worker/Cargo.lock",
   "integration-load-tests/Cargo.lock",
   "wallet-bff/Cargo.lock",

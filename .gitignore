@@ -49,7 +49,8 @@ out
 
 
 .env
-wallet-cert.pem
+*~
+*.pem
 
 
 *.log
