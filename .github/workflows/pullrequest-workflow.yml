@@ -2,7 +2,6 @@
 #
 # SPDX-License-Identifier: CC0-1.0
 
----
 name: Pull Request Workflow
 
 on:
@@ -16,22 +15,32 @@ on:
 permissions:
   contents: read # Best Security practice. Jobs only get read as base, and then permissions are added as needed
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   pr-checks:
-    uses: diggsweden/reusable-ci/.github/workflows/pullrequest-orchestrator.yml@2afbedbefbb457a5fc6175de232e4644cab58a69 # v2.7.3
-    secrets: inherit # Pass org-level secrets (for private Maven dependencies)
+    uses: diggsweden/reusable-ci/.github/workflows/pullrequest-orchestrator.yml@0f2695030159b1fc7331d290f8028b326173bffc # v2.7.7
+    secrets: inherit
     permissions:
       contents: read # Clone repository and read source code
-      packages: read # Access GitHub Packages for Maven dependencies
-      security-events: write # Upload SpotBugs/dependency check results to Security tab
+      packages: read # Access GitHub Packages
+      security-events: write # Upload security scan results to Security tab
     with:
-      reusable-ci-ref: v2.7.3
-      project-type: maven
+      reusable-ci-ref: v2.7.7
+      project-type: rust
+      # Use devbase-check linting (replaces megalint, commitlint, licenselint)
+      linters.devbasecheck: true
+      linters.megalint: false
+      linters.commitlint: false
+      linters.licenselint: false
+      linters.dependencyreview: true
 
   test:
     needs: [pr-checks]
     if: always() # Run tests even if linting fails (get complete feedback)
     permissions:
       contents: read # Access test resources and source code
-      packages: read # Fetch test dependencies from GitHub Packages
+      packages: read # Fetch dependencies from GitHub Packages
     uses: ./.github/workflows/test.yml

@@ -2,25 +2,35 @@
 #
 # SPDX-License-Identifier: CC0-1.0
 
-# Artifacts Configuration for wallet-backend-reference
+# Artifacts Configuration for wallet-r2ps
 # Defines what to build and where to publish
 
 artifacts:
-  - name: wallet-r2ps-backend
-    project-type: maven
-    working-directory: ./wallet-r2ps-backend
+  - name: hsm-worker
+    project-type: rust
+    working-directory: ./hsm-worker
     build-type: application
-    config:
-      java-version: 21
+
+  - name: wallet-bff
+    project-type: rust
+    working-directory: ./wallet-bff
+    build-type: application
 
 containers:
-  - name: wallet-r2ps-backend
-    from: [wallet-r2ps-backend]
+  - name: hsm-worker
+    from: [hsm-worker]
     container-file: Containerfile
-    context: ./wallet-r2ps-backend
+    context: ./hsm-worker
+    platforms: linux/amd64,linux/arm64
+    registry: ghcr.io
+
+  - name: wallet-bff
+    from: [wallet-bff]
+    container-file: Containerfile
+    context: ./wallet-bff
     platforms: linux/amd64,linux/arm64
     registry: ghcr.io
 
 publishers:
   - type: github-packages
-    artifacts: [wallet-r2ps-backend]
+    artifacts: [hsm-worker, wallet-bff]

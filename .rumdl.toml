@@ -1,0 +1,10 @@
+# SPDX-FileCopyrightText: 2025 Digg - Agency for Digital Government
+#
+# SPDX-License-Identifier: CC0-1.0
+
+[global]
+# MD041: First line should be a heading - disabled because SPDX license headers come first
+disable = ["MD041"]
+
+# Exclude generated mdbook documentation
+exclude = ["hsm-worker/docs/book"]

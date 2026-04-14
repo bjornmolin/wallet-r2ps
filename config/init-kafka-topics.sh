@@ -20,7 +20,7 @@ echo 'Waiting for Kafka cluster...'
   --partitions 50 --replication-factor 2 \
   --config min.insync.replicas=1 \
   --config retention.ms=600000 \
-    --config cleanup.policy=delete
+  --config cleanup.policy=delete
 
 /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka-1:19092,kafka-2:19092,kafka-3:19092 \
   --create --if-not-exists --topic r2ps-responses \
@@ -52,4 +52,3 @@ echo 'Topic details:'
 /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka-1:19092 --describe --topic r2ps-responses
 /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka-1:19092 --describe --topic state-init-requests
 /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka-1:19092 --describe --topic state-init-responses
-

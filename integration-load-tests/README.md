@@ -125,13 +125,13 @@ Set `--mean-delay-ms 0` for burst mode (no delays, maximum throughput).
 
 During the test, a summary line is printed every `--stats-interval-secs`:
 
-```
+```text
 [5s] reqs=142 err=0 auth=28 auth_err=0 rps=28.40 avg=34ms p50=31ms p95=62ms p99=78ms max=91ms
 ```
 
 At completion, a full report is printed:
 
-```
+```text
 --- Load Test Report ---
 Duration:      60s
 Total reqs:    1847
@@ -204,7 +204,7 @@ RUST_LOG=integration_load_tests=debug cargo run --release -- load-test ...
 
 ## Architecture
 
-```
+```text
 src/
 ├── crypto/              # Ported from opaque-ke-wasm — same cipher suite as all platforms
 │   ├── pin_stretch.rs   # hash-to-curve(P-256, SHA-256) → ECDH → HKDF-SHA256 → 32 bytes

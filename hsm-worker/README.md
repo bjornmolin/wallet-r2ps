@@ -93,7 +93,7 @@ SOFTHSM2_CONF=softhsm/softhsm2.conf make hsm-status HSM_ROOT_KEY_LABEL=rk-202601
 
 Enable key derivation in `.env` by setting (uncomment and fill in with the label used above):
 
-```
+```text
 HSM_ROOT_KEY_LABEL=rk-202601
 JWS_DOMAIN_SEPARATOR=rk-202601_jws-v1
 OPAQUE_DOMAIN_SEPARATOR=rk-202601_opaque-v1
@@ -149,6 +149,6 @@ cargo test -- --include-ignored --test-threads=1
 
 Generate [./docs/domain-model.html](./docs/book/book/introduction.html) and [./openapi.json](./openapi.json)
 
-```
+```text
 make docs
 ```
