@@ -9,6 +9,7 @@
 set -euo pipefail
 
 git config --global --add safe.directory /src
+git config --global --add safe.directory /src/.git
 branch=$(git -C /src rev-parse --abbrev-ref HEAD)
 git clone --local --no-hardlinks --branch "$branch" /src /verify
 git -C /verify remote set-head origin main
