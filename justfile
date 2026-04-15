@@ -232,11 +232,7 @@ audit:
     set -euo pipefail
     source "{{colors}}"
     just_header "Audit" "cargo audit"
-    for crate in {{crates}}; do
-        printf "  %s ... " "$crate"
-        cargo audit -f "$crate/Cargo.lock"
-        printf "\033[32m✓\033[0m\n"
-    done
+    cargo audit -f Cargo.lock
     just_success "No known vulnerabilities"
 
 # ==================================================================================== #

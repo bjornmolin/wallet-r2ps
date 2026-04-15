@@ -26,9 +26,10 @@ name = "digg-hsm-keytool"
 path = "src/bin/digg_hsm_keytool.rs"
 
 [features]
-openapi = ["dep:utoipa"]
+openapi = ["dep:utoipa", "hsm-common/openapi"]
 
 [dependencies]
+hsm-common = { path = "../hsm-common" }
 rdkafka = { version = "0.38.0", features = ["cmake-build", "curl-static"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"

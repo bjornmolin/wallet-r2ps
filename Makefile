@@ -4,7 +4,7 @@
 
 SHELL := /bin/bash
 
-.PHONY: copy-tokens verify-tokens fix-permissions help
+.PHONY: copy-tokens verify-tokens fix-permissions help verify-docker build-verify copyright
 
 # Target 1: Copy the tokens
 copy-tokens:
@@ -23,6 +23,23 @@ fix-permissions:
 	@echo "Fixing permissions..."
 	sudo chown -R $(shell id -u):$(shell id -g) softhsm-tokens
 	@echo "Permissions fixed."
+
+copyright:
+	git ls-files -z -- '*.rs' '*.toml' '*.sh' '*.yaml' '*.yml' '*.py' 'Makefile' '*Makefile' '*Dockerfile' '*Containerfile' 'justfile' | \
+		xargs -0 reuse annotate \
+			--license EUPL-1.2 \
+			--copyright "Digg - Agency for Digital Government" \
+			--year "$$(date +%Y)" \
+			--skip-unrecognised \
+			--skip-existing
+	reuse lint
+
+# Run `just verify` inside a container (no local tooling required)
+build-verify:
+	docker build -t hsm-verify -f ci/Dockerfile .
+
+verify-docker: build-verify
+	docker run --rm -v "$(CURDIR):/src" hsm-verify
 
 # Standard Docker Compose helpers
 up:

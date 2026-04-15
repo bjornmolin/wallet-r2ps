@@ -18,7 +18,7 @@ use crate::application::port::outgoing::{
 use crate::domain::{
     AsyncResponseDto, AsyncResponseStatus, BffRequest, CachedResponse, DEFAULT_TTL_SECONDS,
     HsmWorkerRequest, NewStateRequestDto, NewStateResponseDto, PendingRequestContext,
-    ProblemDetail, StateInitRequest,
+    ProblemDetail, StateInitRequest, TypedJws,
 };
 pub const PROBLEM_CONTENT_TYPE: &str = "application/problem+json";
 
@@ -181,7 +181,7 @@ pub async fn service(
     let worker_req = HsmWorkerRequest {
         request_id: request_id_str.clone(),
         state_jws,
-        outer_request_jws: req.outer_request_jws,
+        outer_request_jws: TypedJws::new(req.outer_request_jws),
     };
 
     if let Err(e) = state
@@ -427,7 +427,7 @@ pub fn build_async_response(
             }
             (StatusCode::ACCEPTED, headers, Json(body)).into_response()
         }
-        Some(resp) if resp.status != "OK" => {
+        Some(resp) if resp.status != hsm_common::Status::Ok => {
             // Forward the worker's pre-built RFC 9457 JSON if available.
             if let Some(problem_json_str) = resp.error_message {
                 return forward_problem_json(StatusCode::INTERNAL_SERVER_ERROR, problem_json_str);
@@ -443,7 +443,7 @@ pub fn build_async_response(
             let body = AsyncResponseDto {
                 correlation_id,
                 status: AsyncResponseStatus::Complete,
-                result: resp.outer_response_jws,
+                result: resp.outer_response_jws.map(|j| j.into_string()),
                 result_url: None,
                 error: None,
             };
