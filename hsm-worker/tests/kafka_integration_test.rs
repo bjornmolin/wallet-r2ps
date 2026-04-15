@@ -491,7 +491,6 @@ async fn test_worker_kafka_round_trip() {
     let inner_request = InnerRequest {
         version: 1,
         request_type: OperationId::HsmListKeys,
-        request_counter: 1,
         data: None,
     };
     let inner_json = serde_json::to_vec(&inner_request).unwrap();

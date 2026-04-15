@@ -103,7 +103,6 @@ fn test_execute_returns_internal_server_error_response_when_transition_fails() {
     let inner_bytes = serde_json::to_vec(&InnerRequest {
         version: 1,
         request_type: OperationId::AuthenticateStart,
-        request_counter: 1,
         data: Some(serde_json::to_string(&pake_request).unwrap()),
     })
     .unwrap();

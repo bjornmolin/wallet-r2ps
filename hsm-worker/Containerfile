@@ -2,7 +2,7 @@
 #
 # SPDX-License-Identifier: EUPL-1.2
 
-FROM debian:bookworm-slim as runtime-softhsm
+FROM debian:bookworm-slim AS runtime-softhsm
 
 RUN apt-get update && apt-get install -y \
     zlib1g \

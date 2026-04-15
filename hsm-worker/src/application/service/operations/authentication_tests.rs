@@ -51,7 +51,6 @@ fn pake_inner_request(op: OperationId) -> InnerRequest {
     InnerRequest {
         version: 1,
         request_type: op,
-        request_counter: 0,
         data: Some(serde_json::to_string(&pake_req).unwrap()),
     }
 }
@@ -183,7 +182,6 @@ fn register_start_inner_request(auth_code: Option<&str>) -> InnerRequest {
     InnerRequest {
         version: 1,
         request_type: OperationId::RegisterStart,
-        request_counter: 0,
         data: Some(serde_json::to_string(&pake_req).unwrap()),
     }
 }
@@ -197,7 +195,6 @@ fn register_finish_inner_request(auth_code: &str) -> InnerRequest {
     InnerRequest {
         version: 1,
         request_type: OperationId::RegisterFinish,
-        request_counter: 0,
         data: Some(serde_json::to_string(&pake_req).unwrap()),
     }
 }

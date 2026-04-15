@@ -20,7 +20,6 @@ pub fn build_pake_request_jws(
     operation_type: OperationId,
     pake_request: &PakeRequest,
     session_id: Option<&str>,
-    request_counter: u32,
     server_public_key: &Jwk,
     device_private_key: &Jwk,
     kid: &str,
@@ -28,7 +27,6 @@ pub fn build_pake_request_jws(
     let inner_request = InnerRequest {
         version: 1,
         request_type: operation_type,
-        request_counter,
         data: Some(serde_json::to_string(pake_request)?),
     };
     let inner_bytes = serde_json::to_vec(&inner_request)?;
@@ -56,7 +54,6 @@ pub fn build_session_request_jws(
     operation_type: OperationId,
     data_payload: &serde_json::Value,
     session_id: &str,
-    request_counter: u32,
     session_key: &[u8],
     device_private_key: &Jwk,
     kid: &str,
@@ -64,7 +61,6 @@ pub fn build_session_request_jws(
     let inner_request = InnerRequest {
         version: 1,
         request_type: operation_type,
-        request_counter,
         data: Some(serde_json::to_string(data_payload)?),
     };
     let inner_bytes = serde_json::to_vec(&inner_request)?;

@@ -45,7 +45,6 @@ fn decrypt_device_jwe_happy_path(jose: JoseFixture) {
     let inner = InnerRequest {
         version: 1,
         request_type: OperationId::Info,
-        request_counter: 0,
         data: Some("Hello, World! This is a secret message.".to_string()),
     };
     let jwe = make_device_jwe(&jose.public_pem, &inner);

@@ -293,7 +293,6 @@ pub struct InnerRequest {
     pub version: u32,
     #[serde(rename = "type")]
     pub request_type: OperationId,
-    pub request_counter: u32,
     pub data: Option<String>,
 }
 
