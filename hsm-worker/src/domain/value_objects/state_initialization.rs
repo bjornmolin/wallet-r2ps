@@ -2,8 +2,8 @@
 //
 // SPDX-License-Identifier: EUPL-1.2
 
-use crate::domain::value_objects::typed_jws::TypedJws;
 use crate::domain::{DeviceHsmState, EcPublicJwk};
+use hsm_common::TypedJws;
 use serde::{Deserialize, Serialize};
 #[cfg(feature = "openapi")]
 use utoipa::ToSchema;

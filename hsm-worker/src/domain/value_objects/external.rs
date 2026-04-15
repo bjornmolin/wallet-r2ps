@@ -12,8 +12,8 @@ use serde::{Deserialize, Serialize};
 #[cfg(feature = "openapi")]
 use utoipa::ToSchema;
 
-use crate::domain::value_objects::typed_jws::TypedJws;
 use crate::domain::{DeviceHsmState, OuterRequest, OuterResponse, Status};
+use hsm_common::TypedJws;
 
 /// HSM worker request received from Kafka.
 #[derive(Debug, Clone, Serialize, Deserialize)]

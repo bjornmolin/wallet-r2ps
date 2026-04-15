@@ -52,7 +52,7 @@ RUN git clone --depth 1 https://github.com/diggsweden/devbase-check \
 
 # Source is mounted here at runtime; entrypoint clones a clean copy for checks
 WORKDIR /src
+COPY --chown=verify:verify ci/run.sh /usr/local/bin/run.sh
+RUN chmod +x /usr/local/bin/run.sh
 
-# Clone into /verify so the working tree is pristine (only committed files).
-# A full .git directory is preserved so git-based tools (gommitlint, gitleaks…) work.
-CMD ["/bin/bash", "-c", "set -euo pipefail; branch=$(git -C /src rev-parse --abbrev-ref HEAD); git clone --local --no-hardlinks --branch \"$branch\" /src /verify; git -C /verify remote set-head origin main; cd /verify && just verify"]
+CMD ["run.sh"]
