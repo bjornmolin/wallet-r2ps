@@ -65,6 +65,7 @@ fn base_context(state: DeviceHsmState, inner_request: InnerRequest) -> Operation
             context: "auth".to_string(),
             inner_jwe: None,
             server_kid: None,
+            nonce: "test-nonce".to_string(),
         },
         inner_request,
         session_id: None,

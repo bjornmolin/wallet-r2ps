@@ -89,7 +89,12 @@ struct MockNoncePort;
 
 #[async_trait::async_trait]
 impl NoncePort for MockNoncePort {
-    async fn try_store(&self, _nonce: &str, _ttl_seconds: u64) -> Result<bool, String> {
+    async fn try_store(
+        &self,
+        _client_id: &str,
+        _nonce: &str,
+        _ttl_seconds: u64,
+    ) -> Result<bool, String> {
         Ok(true) // always accept in tests
     }
 }
@@ -208,9 +213,21 @@ fn ok_state_init_response() -> StateInitResponse {
     }
 }
 
-fn nonce_query() -> String {
-    let nonce = uuid::Uuid::new_v4();
-    format!("nonce={}", nonce)
+/// Build a minimal fake JWS whose payload is an OuterRequest JSON containing a fresh nonce.
+/// The middleware decodes the payload without verifying the signature, so the signature
+/// bytes can be anything — tests only need a structurally valid compact JWS.
+fn build_test_outer_jws() -> String {
+    use base64::Engine;
+    use base64::engine::general_purpose::URL_SAFE_NO_PAD;
+    let header = URL_SAFE_NO_PAD.encode(r#"{"alg":"ES256","kid":"test-key"}"#);
+    let payload_json = serde_json::json!({
+        "version": 1,
+        "context": "hsm",
+        "nonce": "some_nonce"
+    });
+    let payload = URL_SAFE_NO_PAD.encode(serde_json::to_string(&payload_json).unwrap());
+    let sig = URL_SAFE_NO_PAD.encode(b"fakesig");
+    format!("{}.{}.{}", header, payload, sig)
 }
 
 async fn read_body_json(response: axum::response::Response) -> serde_json::Value {
@@ -230,7 +247,7 @@ async fn test_post_hsm_request_sends_to_kafka() {
 
     let body = serde_json::json!({
         "clientId": "test-client",
-        "outerRequestJws": "mock-outer-jws"
+        "outerRequestJws": build_test_outer_jws()
     });
 
     let response = ctx
@@ -238,7 +255,7 @@ async fn test_post_hsm_request_sends_to_kafka() {
         .oneshot(
             Request::builder()
                 .method("POST")
-                .uri(format!("/hsm/v1/requests?{}", nonce_query()))
+                .uri("/hsm/v1/requests")
                 .header("content-type", "application/json")
                 .body(Body::from(serde_json::to_string(&body).unwrap()))
                 .unwrap(),
@@ -262,7 +279,7 @@ async fn test_post_hsm_request_sync_returns_result() {
 
     let body = serde_json::json!({
         "clientId": "test-client",
-        "outerRequestJws": "mock-outer-jws"
+        "outerRequestJws": build_test_outer_jws()
     });
 
     let response = ctx
@@ -270,7 +287,7 @@ async fn test_post_hsm_request_sync_returns_result() {
         .oneshot(
             Request::builder()
                 .method("POST")
-                .uri(format!("/hsm/v1/requests?{}", nonce_query()))
+                .uri("/hsm/v1/requests")
                 .header("content-type", "application/json")
                 .body(Body::from(serde_json::to_string(&body).unwrap()))
                 .unwrap(),
@@ -296,7 +313,7 @@ async fn test_post_hsm_request_sync_timeout_returns_pending() {
 
     let body = serde_json::json!({
         "clientId": "test-client",
-        "outerRequestJws": "mock-outer-jws"
+        "outerRequestJws": build_test_outer_jws()
     });
 
     let response = ctx
@@ -304,7 +321,7 @@ async fn test_post_hsm_request_sync_timeout_returns_pending() {
         .oneshot(
             Request::builder()
                 .method("POST")
-                .uri(format!("/hsm/v1/requests?{}", nonce_query()))
+                .uri("/hsm/v1/requests")
                 .header("content-type", "application/json")
                 .body(Body::from(serde_json::to_string(&body).unwrap()))
                 .unwrap(),
@@ -330,7 +347,7 @@ async fn test_post_hsm_request_missing_device_state() {
 
     let body = serde_json::json!({
         "clientId": "unknown-client",
-        "outerRequestJws": "mock-outer-jws"
+        "outerRequestJws": build_test_outer_jws()
     });
 
     let response = ctx
@@ -338,7 +355,7 @@ async fn test_post_hsm_request_missing_device_state() {
         .oneshot(
             Request::builder()
                 .method("POST")
-                .uri(format!("/hsm/v1/requests?{}", nonce_query()))
+                .uri("/hsm/v1/requests")
                 .header("content-type", "application/json")
                 .body(Body::from(serde_json::to_string(&body).unwrap()))
                 .unwrap(),
@@ -501,7 +518,7 @@ async fn test_post_legacy_operations_with_result_returns_jws_string() {
 
     let body = serde_json::json!({
         "clientId": "test-client",
-        "outerRequestJws": "mock-outer-jws"
+        "outerRequestJws": build_test_outer_jws()
     });
 
     let response = ctx
@@ -509,7 +526,7 @@ async fn test_post_legacy_operations_with_result_returns_jws_string() {
         .oneshot(
             Request::builder()
                 .method("POST")
-                .uri(format!("/hsm/v1/operations?{}", nonce_query()))
+                .uri("/hsm/v1/operations")
                 .header("content-type", "application/json")
                 .body(Body::from(serde_json::to_string(&body).unwrap()))
                 .unwrap(),
@@ -538,7 +555,7 @@ async fn test_post_legacy_operations_timeout_returns_408() {
 
     let body = serde_json::json!({
         "clientId": "test-client",
-        "outerRequestJws": "mock-outer-jws"
+        "outerRequestJws": build_test_outer_jws()
     });
 
     let response = ctx
@@ -546,7 +563,7 @@ async fn test_post_legacy_operations_timeout_returns_408() {
         .oneshot(
             Request::builder()
                 .method("POST")
-                .uri(format!("/hsm/v1/operations?{}", nonce_query()))
+                .uri("/hsm/v1/operations")
                 .header("content-type", "application/json")
                 .body(Body::from(serde_json::to_string(&body).unwrap()))
                 .unwrap(),
@@ -570,7 +587,7 @@ async fn test_malformed_json_returns_problem_json() {
         .oneshot(
             Request::builder()
                 .method("POST")
-                .uri(format!("/hsm/v1/requests?{}", nonce_query()))
+                .uri("/hsm/v1/requests")
                 .header("content-type", "application/json")
                 .body(Body::from("not valid json {{{"))
                 .unwrap(),

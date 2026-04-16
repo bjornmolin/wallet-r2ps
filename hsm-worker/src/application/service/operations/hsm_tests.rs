@@ -31,6 +31,7 @@ mod tests {
                 context: "hsm".to_string(),
                 inner_jwe: None, // Simplified for testing HSM ops
                 server_kid: None,
+                nonce: "test-nonce".to_string(),
             },
             inner_request,
             session_id: None,

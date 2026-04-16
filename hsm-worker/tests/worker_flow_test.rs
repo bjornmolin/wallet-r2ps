@@ -315,6 +315,7 @@ impl TestFixture {
             context: "hsm".to_string(),
             server_kid: Some(self.server_jose.jws_kid().to_string()),
             inner_jwe: Some(TypedJwe::new(inner_jwe)),
+            nonce: "some_nonce".to_string(),
         };
         let outer_jws = device_sign_jwt(
             &serde_json::to_vec(&outer).unwrap(),

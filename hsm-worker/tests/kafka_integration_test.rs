@@ -512,6 +512,7 @@ async fn test_worker_kafka_round_trip() {
         context: "hsm".to_string(),
         server_kid: Some(jose.jws_kid().to_string()),
         inner_jwe: Some(TypedJwe::new(inner_jwe_str)),
+        nonce: "some_nonce".to_string(),
     };
     let outer_json = serde_json::to_vec(&outer_request).unwrap();
     let outer_request_jws = {

@@ -21,9 +21,14 @@ impl NonceRedisAdapter {
 
 #[async_trait::async_trait]
 impl NoncePort for NonceRedisAdapter {
-    async fn try_store(&self, nonce: &str, ttl_seconds: u64) -> Result<bool, String> {
+    async fn try_store(
+        &self,
+        client_id: &str,
+        nonce: &str,
+        ttl_seconds: u64,
+    ) -> Result<bool, String> {
         let mut conn = self.conn.clone();
-        let key = format!("{}{}", KEY_PREFIX, nonce);
+        let key = format!("{}{}:{}", KEY_PREFIX, client_id, nonce);
 
         // SET key 1 NX EX ttl — atomic: only sets if key does not exist.
         let result: Option<String> = redis::cmd("SET")

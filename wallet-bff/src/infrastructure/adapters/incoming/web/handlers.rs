@@ -110,9 +110,6 @@ pub async fn task_response(
 #[utoipa::path(
     post,
     path = "/hsm/v1/requests",
-    params(
-        ("nonce" = String, Query, description = "Unique UUID nonce for replay protection"),
-    ),
     request_body(content = BffRequest, content_type = "application/json"),
     responses(
         (status = 200, description = "Request completed synchronously", body = AsyncResponseDto),
@@ -214,9 +211,6 @@ pub async fn service(
 #[utoipa::path(
     post,
     path = "/hsm/v1/operations",
-    params(
-        ("nonce" = String, Query, description = "Unique UUID nonce for replay protection"),
-    ),
     request_body(content = BffRequest, content_type = "application/json"),
     responses(
         (status = 200, description = "Worker result (plain JWS string)"),

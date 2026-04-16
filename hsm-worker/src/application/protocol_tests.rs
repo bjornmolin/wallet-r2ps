@@ -29,6 +29,7 @@ mod tests {
             context: "hsm".to_string(),
             inner_jwe: jwe.map(TypedJwe::new),
             server_kid: None,
+            nonce: "test-nonce".to_string(),
         }
     }
 

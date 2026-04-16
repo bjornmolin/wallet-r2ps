@@ -47,7 +47,12 @@ pub trait NoncePort: Send + Sync {
     /// Attempt to store a nonce. Returns `true` if the nonce was new (stored
     /// successfully), `false` if it already exists (replay). Errors indicate
     /// a store connectivity problem.
-    async fn try_store(&self, nonce: &str, ttl_seconds: u64) -> Result<bool, String>;
+    async fn try_store(
+        &self,
+        client_id: &str,
+        nonce: &str,
+        ttl_seconds: u64,
+    ) -> Result<bool, String>;
 }
 
 /// SPI port: in-memory cache for state-init responses, shared between the Kafka consumer
