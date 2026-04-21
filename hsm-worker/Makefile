@@ -75,13 +75,17 @@ check:
 	run test cargo test -q; \
 	run clippy cargo clippy -q --all-targets -- -D warnings;
 
-## Run all testContainer tests
-testcontainer:
-	cargo test -- --ignored --test-threads=1
+## Run unit tests and integration tests without external dependencies
+test:
+	cargo test
 
-## Run all tests (unit + integration + testContainer) in one go
+## Run unit tests and integration tests, including testcontainer tests (requires Docker)
+testcontainer:
+	cargo test --features testcontainers -- --test-threads=1
+
+## Run all tests (requires Docker and SoftHSM)
 all-tests:
-	cargo test -- --include-ignored --test-threads=1
+	cargo test --features testcontainers -- --include-ignored --test-threads=1
 
 # Install cargo-llvm-cov and llvm-tools if not already present
 coverage-setup:
@@ -92,9 +96,9 @@ coverage-setup:
 coverage: coverage-setup
 	cargo llvm-cov
 
-## Run full test suite (including ignored integration tests) with llvm coverage report (Installs llvm-cov needed)
+## Run full test suite including pkcs11 tests with llvm coverage report (Installs llvm-cov if needed)
 full-coverage: coverage-setup
-	cargo llvm-cov --all-targets -- --include-ignored
+	cargo llvm-cov --all-targets --features testcontainers -- --include-ignored
 
 ## Create the AES wrapping key (run once when setting up a new HSM slot)
 hsm-create-wrapping-key:

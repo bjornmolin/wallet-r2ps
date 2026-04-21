@@ -66,7 +66,7 @@ async fn valkey_connection_manager(url: &str) -> ConnectionManager {
 // ── Valkey adapter tests ─────────────────────────────────────────────────────
 
 #[tokio::test]
-#[ignore]
+#[cfg_attr(not(feature = "testcontainers"), ignore)]
 async fn test_device_state_valkey_round_trip() {
     let (_container, url) = start_valkey().await;
     let conn = valkey_connection_manager(&url).await;
@@ -81,7 +81,7 @@ async fn test_device_state_valkey_round_trip() {
 }
 
 #[tokio::test]
-#[ignore]
+#[cfg_attr(not(feature = "testcontainers"), ignore)]
 async fn test_pending_context_valkey_round_trip() {
     let (_container, url) = start_valkey().await;
     let conn = valkey_connection_manager(&url).await;
@@ -104,7 +104,7 @@ async fn test_pending_context_valkey_round_trip() {
 }
 
 #[tokio::test]
-#[ignore]
+#[cfg_attr(not(feature = "testcontainers"), ignore)]
 async fn test_response_sink_valkey_round_trip() {
     let (_container, url) = start_valkey().await;
     let conn = valkey_connection_manager(&url).await;
@@ -133,7 +133,7 @@ async fn test_response_sink_valkey_round_trip() {
 // Verifies that save() passes the TTL through to Valkey: a key saved with a 1 s
 // TTL must be gone after 2 s.
 #[tokio::test]
-#[ignore]
+#[cfg_attr(not(feature = "testcontainers"), ignore)]
 async fn test_device_state_valkey_ttl_expiry() {
     let (_container, url) = start_valkey().await;
     let conn = valkey_connection_manager(&url).await;
@@ -148,7 +148,7 @@ async fn test_device_state_valkey_ttl_expiry() {
 // Verifies that store() passes response_ttl_seconds through to Valkey: a response
 // stored with a 1 s TTL must be gone after 2 s.
 #[tokio::test]
-#[ignore]
+#[cfg_attr(not(feature = "testcontainers"), ignore)]
 async fn test_response_sink_valkey_ttl_expiry() {
     let (_container, url) = start_valkey().await;
     let conn = valkey_connection_manager(&url).await;
@@ -171,7 +171,7 @@ async fn test_response_sink_valkey_ttl_expiry() {
 // The device state machine writes to the same key at each step (Registered →
 // Authenticated), so silent no-op or append behaviour would be a data bug.
 #[tokio::test]
-#[ignore]
+#[cfg_attr(not(feature = "testcontainers"), ignore)]
 async fn test_device_state_valkey_overwrite() {
     let (_container, url) = start_valkey().await;
     let conn = valkey_connection_manager(&url).await;
@@ -188,7 +188,7 @@ async fn test_device_state_valkey_overwrite() {
 // ── Nonce adapter tests ──────────────────────────────────────────────────────
 
 #[tokio::test]
-#[ignore]
+#[cfg_attr(not(feature = "testcontainers"), ignore)]
 async fn test_nonce_adapter_first_store_returns_true() {
     let (_container, url) = start_valkey().await;
     let conn = valkey_connection_manager(&url).await;
@@ -199,7 +199,7 @@ async fn test_nonce_adapter_first_store_returns_true() {
 }
 
 #[tokio::test]
-#[ignore]
+#[cfg_attr(not(feature = "testcontainers"), ignore)]
 async fn test_nonce_adapter_duplicate_nonce_returns_false() {
     let (_container, url) = start_valkey().await;
     let conn = valkey_connection_manager(&url).await;
@@ -214,7 +214,7 @@ async fn test_nonce_adapter_duplicate_nonce_returns_false() {
 // Nonces are scoped per client: the same nonce value from two different clients
 // must produce distinct Valkey keys and both be accepted.
 #[tokio::test]
-#[ignore]
+#[cfg_attr(not(feature = "testcontainers"), ignore)]
 async fn test_nonce_adapter_different_client_same_nonce_is_allowed() {
     let (_container, url) = start_valkey().await;
     let conn = valkey_connection_manager(&url).await;
@@ -228,7 +228,7 @@ async fn test_nonce_adapter_different_client_same_nonce_is_allowed() {
 
 // A nonce stored with TTL=1 must be accepted again after the key expires.
 #[tokio::test]
-#[ignore]
+#[cfg_attr(not(feature = "testcontainers"), ignore)]
 async fn test_nonce_adapter_expired_nonce_can_be_reused() {
     let (_container, url) = start_valkey().await;
     let conn = valkey_connection_manager(&url).await;
@@ -244,7 +244,7 @@ async fn test_nonce_adapter_expired_nonce_can_be_reused() {
 // ── Kafka producer tests ─────────────────────────────────────────────────────
 
 #[tokio::test]
-#[ignore]
+#[cfg_attr(not(feature = "testcontainers"), ignore)]
 async fn test_request_sender_produces_to_kafka() {
     let (_container, bootstrap) = start_kafka().await;
 
@@ -283,7 +283,7 @@ async fn test_request_sender_produces_to_kafka() {
 }
 
 #[tokio::test]
-#[ignore]
+#[cfg_attr(not(feature = "testcontainers"), ignore)]
 async fn test_state_init_sender_produces_to_kafka() {
     let (_container, bootstrap) = start_kafka().await;
 
@@ -346,7 +346,7 @@ impl ResponseUseCase for CapturingResponseUseCase {
 }
 
 #[tokio::test]
-#[ignore]
+#[cfg_attr(not(feature = "testcontainers"), ignore)]
 async fn test_response_consumer_receives_and_calls_use_case() {
     let (_container, bootstrap) = start_kafka().await;
 
@@ -404,7 +404,7 @@ async fn test_response_consumer_receives_and_calls_use_case() {
 }
 
 #[tokio::test]
-#[ignore]
+#[cfg_attr(not(feature = "testcontainers"), ignore)]
 async fn test_state_init_consumer_receives_and_saves_to_valkey() {
     let (_kafka, bootstrap) = start_kafka().await;
     let (_valkey, valkey_url) = start_valkey().await;
@@ -479,7 +479,7 @@ async fn test_state_init_consumer_receives_and_saves_to_valkey() {
 // ── BFF round-trip test ──────────────────────────────────────────────────────
 
 #[tokio::test]
-#[ignore]
+#[cfg_attr(not(feature = "testcontainers"), ignore)]
 async fn test_bff_kafka_valkey_round_trip() {
     let (_kafka, bootstrap) = start_kafka().await;
     let (_valkey, valkey_url) = start_valkey().await;
