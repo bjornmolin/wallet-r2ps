@@ -18,7 +18,7 @@ Ett naturligt första angreppssätt är att kräva ett unikt nonce som HTTP-frå
 
 `nonce`-fältet bäddas in direkt i `OuterRequest`, som JWS-signeras av enhetens privata nyckel. BFF:en extraherar nonce via base64url-avkodning av JWS-payloadsegmentet utan att verifiera signaturen, och kontrollerar nonce mot Valkey innan förfrågan vidarebefordras till Kafka.
 
-Nonce lagras i Valkey med nyckeln `nonce:{client_id}:{nonce}`, där `client_id` hämtas ur request-bodyn (utanför JWS). Sammansättningen innebär att olika klienter kan använda samma nonce-värde utan kollision, utan att det ger angripare något utrymme att manipulera tillhörigheten – en förändrad nonce bryter jws-signaturen oavsett vad `client_id` anger.
+Nonce lagras i Valkey med nyckeln `nonce:{client_id}:{nonce}`, där `client_id` hämtas ur request-bodyn (utanför JWS). Sammansättningen innebär att olika klienter kan använda samma nonce-värde utan kollision, utan att det ger angripare något utrymme att manipulera tillhörigheten – en förändrad nonce bryter jws-signaturen oavsett vad `client_id` anger. TTL för nonce i Valkey i BFF måste vara >= TTL för en opaque session i HsmWorker.
 
 ## Motivering
 
@@ -28,7 +28,7 @@ Följande alternativ övervägdes och avvisades:
 
 - **Tidsstämpel (`issued_at`) vid sidan av nonce** – skulle stänga fönstret för replay efter Valkey TTL-utgång, men den extra komplexiteten (nytt fält i `OuterRequest`, ny konfigvariabel `REPLAY_WINDOW_SECONDS`, tidsstämpelvalidering i workern) bedömdes inte motiverad av hotbilden. Session-JWE-operationer skyddas redan av att den efemära sessionsnyckeln försvinner vid omstart; Device-JWE-operationer har ett reellt men begränsat fönster tack vare att OPAQUE är ett protokoll som utförs i två steg.
 
-- **Skydd för state-init** – `/hsm/v1/device-states` saknar signerad payload och klientnyckel. Skadorna från en replay är begränsade och meningsfullt skydd tillhör ett annat lager (hastighetsbegränsning per IP eller publikt nyckelfingeravtryck).
+- **Skydd för state-init** – `/hsm/v1/device-states` är work-in-progress och saknar i nuläget signerad payload och klientnyckel. Vi får återkomma till skydd av denna endpoint när vi vet hur den ska se ut. 
 
 ## Konsekvenser av beslutet
 
