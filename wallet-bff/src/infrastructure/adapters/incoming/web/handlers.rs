@@ -11,6 +11,7 @@ use std::time::Duration;
 use tracing::info;
 use uuid::Uuid;
 
+use super::problem_response;
 use crate::application::port::incoming::ResponseUseCase;
 use crate::application::port::outgoing::{
     DeviceStatePort, PendingContextPort, RequestSenderPort, StateInitCachePort, StateInitSenderPort,
@@ -20,6 +21,7 @@ use crate::domain::{
     HsmWorkerRequest, NewStateRequestDto, NewStateResponseDto, PendingRequestContext,
     ProblemDetail, StateInitRequest, TypedJws,
 };
+
 pub const PROBLEM_CONTENT_TYPE: &str = "application/problem+json";
 
 pub struct AppState {
@@ -42,29 +44,8 @@ impl AppState {
     }
 }
 
-/// Returns an RFC 9457 Problem Details response with Content-Type: application/problem+json.
-fn problem_json(
-    status: StatusCode,
-    title: &str,
-    detail: Option<&str>,
-    instance: &str,
-) -> axum::response::Response {
-    let body = ProblemDetail {
-        problem_type: None,
-        title: title.to_string(),
-        status: status.as_u16(),
-        detail: detail.map(str::to_string),
-        instance: Some(instance.to_string()),
-    };
-    let mut response = (status, Json(body)).into_response();
-    response
-        .headers_mut()
-        .insert(header::CONTENT_TYPE, PROBLEM_CONTENT_TYPE.parse().unwrap());
-    response
-}
-
 /// Returns a pre-built RFC 9457 JSON string (from the worker) as a problem+json response.
-fn forward_problem_json(status: StatusCode, raw_json: String) -> axum::response::Response {
+fn forward_problem_response(status: StatusCode, raw_json: String) -> axum::response::Response {
     let mut response = (status, raw_json).into_response();
     response
         .headers_mut()
@@ -96,7 +77,7 @@ fn json_rejection_response(e: JsonRejection, instance: &str) -> axum::response::
             "The request body could not be processed.",
         ),
     };
-    problem_json(status, title, Some(detail), instance)
+    problem_response(status, title, Some(detail), instance)
 }
 
 /// GET /hsm/requests/{correlationId}
@@ -152,7 +133,7 @@ pub async fn service(
         Some(s) => s,
         None => {
             info!("No state found for clientId: {}", req.client_id);
-            return problem_json(
+            return problem_response(
                 StatusCode::NOT_FOUND,
                 "Device Not Found",
                 Some(&format!(
@@ -190,7 +171,7 @@ pub async fn service(
         .await
     {
         tracing::error!("Failed to send worker request: {}", e);
-        return problem_json(
+        return problem_response(
             StatusCode::INTERNAL_SERVER_ERROR,
             "Internal Server Error",
             Some("Failed to enqueue the request."),
@@ -226,7 +207,7 @@ pub async fn service(
     (StatusCode::ACCEPTED, headers, Json(body)).into_response()
 }
 
-/// POST /hsm/v1/operations  (synchronous endpoint)
+/// POST /hsm/v1/operations (synchronous endpoint)
 #[utoipa::path(
     post,
     path = "/hsm/v1/operations",
@@ -250,7 +231,7 @@ pub async fn legacy_service(
     let bytes = match axum::body::to_bytes(response.into_body(), usize::MAX).await {
         Ok(b) => b,
         Err(_) => {
-            return problem_json(
+            return problem_response(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "Internal Server Error",
                 Some("Failed to read response body."),
@@ -262,7 +243,7 @@ pub async fn legacy_service(
     let dto: serde_json::Value = match serde_json::from_slice(&bytes) {
         Ok(v) => v,
         Err(_) => {
-            return problem_json(
+            return problem_response(
                 StatusCode::REQUEST_TIMEOUT,
                 "Request Timeout",
                 Some("No response received within the timeout period."),
@@ -275,7 +256,7 @@ pub async fn legacy_service(
         return (status, result.to_string()).into_response();
     }
 
-    problem_json(
+    problem_response(
         StatusCode::REQUEST_TIMEOUT,
         "Request Timeout",
         Some("No response received within the timeout period."),
@@ -356,7 +337,7 @@ pub async fn create_state(
         .await
     {
         tracing::error!("Failed to send state-init request: {}", e);
-        return problem_json(
+        return problem_response(
             StatusCode::INTERNAL_SERVER_ERROR,
             "Internal Server Error",
             Some("Failed to enqueue state initialization."),
@@ -395,7 +376,7 @@ pub async fn create_state(
         }
         None => {
             tracing::error!("State initialization timeout for clientId: {}", client_id);
-            problem_json(
+            problem_response(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "Internal Server Error",
                 Some("State initialization did not complete within the expected time."),
@@ -429,10 +410,13 @@ pub fn build_async_response(
         }
         Some(resp) if resp.status != hsm_common::Status::Ok => {
             // Forward the worker's pre-built RFC 9457 JSON if available.
-            if let Some(problem_json_str) = resp.error_message {
-                return forward_problem_json(StatusCode::INTERNAL_SERVER_ERROR, problem_json_str);
+            if let Some(problem_response_str) = resp.error_message {
+                return forward_problem_response(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    problem_response_str,
+                );
             }
-            problem_json(
+            problem_response(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "Internal Server Error",
                 Some("The worker returned a non-OK status."),

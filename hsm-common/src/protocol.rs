@@ -284,6 +284,8 @@ pub struct OuterRequest {
     pub server_kid: Option<String>,
     /// JWE compact serialization of the encrypted InnerRequest
     pub inner_jwe: Option<TypedJwe<InnerRequest>>,
+    /// Per-request unique identifier. Must not be reused within the Valkey TTL window.
+    pub nonce: String,
 }
 
 /// Decrypted inner request payload.
@@ -293,7 +295,6 @@ pub struct InnerRequest {
     pub version: u32,
     #[serde(rename = "type")]
     pub request_type: OperationId,
-    pub request_counter: u32,
     pub data: Option<String>,
 }
 

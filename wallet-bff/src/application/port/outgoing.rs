@@ -41,6 +41,20 @@ pub trait ResponseSinkPort: Send + Sync {
     async fn load(&self, request_id: &str) -> Option<CachedResponse>;
 }
 
+/// SPI port: replay-attack nonce store.
+#[async_trait::async_trait]
+pub trait NoncePort: Send + Sync {
+    /// Attempt to store a nonce. Returns `true` if the nonce was new (stored
+    /// successfully), `false` if it already exists (replay). Errors indicate
+    /// a store connectivity problem.
+    async fn try_store(
+        &self,
+        client_id: &str,
+        nonce: &str,
+        ttl_seconds: u64,
+    ) -> Result<bool, String>;
+}
+
 /// SPI port: in-memory cache for state-init responses, shared between the Kafka consumer
 /// and the HTTP request handler that polls for the result.
 #[async_trait::async_trait]

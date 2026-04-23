@@ -296,14 +296,12 @@ impl TestFixture {
         req_id: &str,
         session_id: Option<SessionId>,
         op: OperationId,
-        counter: u32,
         inner_data: Option<String>,
         session_key: Option<&[u8]>,
     ) -> HsmWorkerRequest {
         let inner = InnerRequest {
             version: 1,
             request_type: op,
-            request_counter: counter,
             data: inner_data,
         };
         let inner_bytes = serde_json::to_vec(&inner).unwrap();
@@ -317,6 +315,7 @@ impl TestFixture {
             context: "hsm".to_string(),
             server_kid: Some(self.server_jose.jws_kid().to_string()),
             inner_jwe: Some(TypedJwe::new(inner_jwe)),
+            nonce: "some_nonce".to_string(),
         };
         let outer_jws = device_sign_jwt(
             &serde_json::to_vec(&outer).unwrap(),
@@ -428,7 +427,6 @@ fn run_authenticate_sequence(fixture: &TestFixture) -> (SessionId, Vec<u8>) {
         "auth-seq-1",
         None,
         OperationId::AuthenticateStart,
-        1,
         Some(serde_json::to_string(&pake_data).unwrap()),
         None,
     );
@@ -450,7 +448,6 @@ fn run_authenticate_sequence(fixture: &TestFixture) -> (SessionId, Vec<u8>) {
         "auth-seq-2",
         Some(session_id.clone()),
         OperationId::AuthenticateFinish,
-        2,
         Some(serde_json::to_string(&pake_data).unwrap()),
         None,
     );
@@ -501,7 +498,6 @@ fn test_register_start_finish() {
         "reg-1",
         None,
         OperationId::RegisterStart,
-        1,
         Some(serde_json::to_string(&pake_req).unwrap()),
         None,
     );
@@ -518,7 +514,6 @@ fn test_register_start_finish() {
         "reg-2",
         None,
         OperationId::RegisterFinish,
-        2,
         Some(serde_json::to_string(&pake_req).unwrap()),
         None,
     );
@@ -568,7 +563,6 @@ fn test_register_start_invalid_authorization_fails() {
         "reg-invalid",
         None,
         OperationId::RegisterStart,
-        1,
         Some(serde_json::to_string(&pake_req).unwrap()),
         None,
     );
@@ -630,7 +624,6 @@ fn test_end_session() {
         "end-session",
         Some(session_id.clone()),
         OperationId::EndSession,
-        3,
         None,
         Some(&session_key),
     );
@@ -655,7 +648,6 @@ fn test_post_auth_hsm_list_keys_empty() {
         "list-keys-empty",
         Some(session_id),
         OperationId::HsmListKeys,
-        3,
         Some(serde_json::to_string(&serde_json::json!({})).unwrap()),
         Some(&session_key),
     );
@@ -697,7 +689,6 @@ fn test_post_auth_hsm_generate_key() {
         "gen-key",
         Some(session_id),
         OperationId::HsmGenerateKey,
-        3,
         Some(serde_json::to_string(&gen_data).unwrap()),
         Some(&session_key),
     );
@@ -733,7 +724,6 @@ fn test_post_auth_hsm_delete_key() {
         "del-key",
         Some(session_id),
         OperationId::HsmDeleteKey,
-        3,
         Some(serde_json::to_string(&del_data).unwrap()),
         Some(&session_key),
     );
@@ -762,7 +752,6 @@ fn test_post_auth_hsm_list_keys_with_entries() {
         "list-keys-entries",
         Some(session_id),
         OperationId::HsmListKeys,
-        3,
         Some(serde_json::to_string(&serde_json::json!({})).unwrap()),
         Some(&session_key),
     );
@@ -804,7 +793,6 @@ fn test_authenticate_finish_without_start_fails() {
         "auth-finish-no-start",
         unknown_session_id,
         OperationId::AuthenticateFinish,
-        1,
         Some(serde_json::to_string(&pake_req).unwrap()),
         None,
     );
@@ -851,7 +839,6 @@ fn test_post_auth_op_without_session_fails() {
         "post-auth-no-session",
         unknown_session_id,
         OperationId::HsmListKeys,
-        1,
         Some(serde_json::to_string(&serde_json::json!({})).unwrap()),
         None, // device encryption — wrong mode for a post-auth operation
     );
@@ -879,7 +866,6 @@ fn test_end_session_twice_fails() {
             req_id,
             Some(session_id.clone()),
             OperationId::EndSession,
-            3,
             None,
             Some(session_key.as_slice()),
         )
@@ -912,7 +898,6 @@ fn test_post_auth_with_device_encryption_fails() {
         "post-auth-wrong-encryption",
         Some(session_id),
         OperationId::HsmListKeys,
-        3,
         Some(serde_json::to_string(&serde_json::json!({})).unwrap()),
         None, // device encryption — wrong mode for HsmListKeys
     );

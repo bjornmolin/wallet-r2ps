@@ -16,6 +16,7 @@ use testcontainers_modules::valkey::Valkey;
 use tokio::sync::Mutex;
 
 use wallet_bff::application::port::incoming::ResponseUseCase;
+use wallet_bff::application::port::outgoing::NoncePort;
 use wallet_bff::application::port::outgoing::{
     DeviceStatePort, PendingContextPort, ResponseSinkPort,
 };
@@ -32,6 +33,7 @@ use wallet_bff::infrastructure::adapters::outgoing::kafka::request_sender::{
     KafkaRequestSender, KafkaStateInitSender,
 };
 use wallet_bff::infrastructure::adapters::outgoing::redis::device_state::DeviceStateRedisAdapter;
+use wallet_bff::infrastructure::adapters::outgoing::redis::nonce::NonceRedisAdapter;
 use wallet_bff::infrastructure::adapters::outgoing::redis::pending_context::PendingContextRedisAdapter;
 use wallet_bff::infrastructure::adapters::outgoing::redis::response_sink::ResponseSinkRedisAdapter;
 
@@ -181,6 +183,62 @@ async fn test_device_state_valkey_overwrite() {
         adapter.load("dev-1").await,
         Some("second-state".to_string())
     );
+}
+
+// ── Nonce adapter tests ──────────────────────────────────────────────────────
+
+#[tokio::test]
+#[ignore]
+async fn test_nonce_adapter_first_store_returns_true() {
+    let (_container, url) = start_valkey().await;
+    let conn = valkey_connection_manager(&url).await;
+    let adapter = NonceRedisAdapter::new(conn);
+
+    let result = adapter.try_store("client-a", "nonce-1", 60).await;
+    assert_eq!(result, Ok(true));
+}
+
+#[tokio::test]
+#[ignore]
+async fn test_nonce_adapter_duplicate_nonce_returns_false() {
+    let (_container, url) = start_valkey().await;
+    let conn = valkey_connection_manager(&url).await;
+    let adapter = NonceRedisAdapter::new(conn);
+
+    let first = adapter.try_store("client-a", "nonce-dup", 60).await;
+    let second = adapter.try_store("client-a", "nonce-dup", 60).await;
+    assert_eq!(first, Ok(true));
+    assert_eq!(second, Ok(false));
+}
+
+// Nonces are scoped per client: the same nonce value from two different clients
+// must produce distinct Valkey keys and both be accepted.
+#[tokio::test]
+#[ignore]
+async fn test_nonce_adapter_different_client_same_nonce_is_allowed() {
+    let (_container, url) = start_valkey().await;
+    let conn = valkey_connection_manager(&url).await;
+    let adapter = NonceRedisAdapter::new(conn);
+
+    let a = adapter.try_store("client-a", "shared-nonce", 60).await;
+    let b = adapter.try_store("client-b", "shared-nonce", 60).await;
+    assert_eq!(a, Ok(true));
+    assert_eq!(b, Ok(true));
+}
+
+// A nonce stored with TTL=1 must be accepted again after the key expires.
+#[tokio::test]
+#[ignore]
+async fn test_nonce_adapter_expired_nonce_can_be_reused() {
+    let (_container, url) = start_valkey().await;
+    let conn = valkey_connection_manager(&url).await;
+    let adapter = NonceRedisAdapter::new(conn);
+
+    let first = adapter.try_store("client-a", "nonce-ttl", 1).await;
+    assert_eq!(first, Ok(true));
+    tokio::time::sleep(Duration::from_secs(2)).await;
+    let after_expiry = adapter.try_store("client-a", "nonce-ttl", 1).await;
+    assert_eq!(after_expiry, Ok(true));
 }
 
 // ── Kafka producer tests ─────────────────────────────────────────────────────

@@ -11,7 +11,8 @@ use tower::ServiceExt;
 
 use wallet_bff::application::port::incoming::ResponseUseCase;
 use wallet_bff::application::port::outgoing::{
-    DeviceStatePort, PendingContextPort, RequestSenderPort, StateInitCachePort, StateInitSenderPort,
+    DeviceStatePort, NoncePort, PendingContextPort, RequestSenderPort, StateInitCachePort,
+    StateInitSenderPort,
 };
 use wallet_bff::domain::{
     CachedResponse, HsmWorkerRequest, HsmWorkerResponse, OuterResponse, PendingRequestContext,
@@ -19,6 +20,7 @@ use wallet_bff::domain::{
 };
 use wallet_bff::infrastructure::adapters::incoming::web;
 use wallet_bff::infrastructure::adapters::incoming::web::handlers::AppState;
+use wallet_bff::infrastructure::adapters::incoming::web::replay_protection::ReplayProtectionState;
 
 // ---------------------------------------------------------------------------
 // Hand-written test mocks (consistent with existing response_service test style)
@@ -80,6 +82,20 @@ impl ResponseUseCase for MockResponseUseCase {
         _timeout_ms: u64,
     ) -> Option<CachedResponse> {
         self.sync_response.clone()
+    }
+}
+
+struct MockNoncePort;
+
+#[async_trait::async_trait]
+impl NoncePort for MockNoncePort {
+    async fn try_store(
+        &self,
+        _client_id: &str,
+        _nonce: &str,
+        _ttl_seconds: u64,
+    ) -> Result<bool, String> {
+        Ok(true) // always accept in tests
     }
 }
 
@@ -154,8 +170,13 @@ fn make_test_app(cfg: TestAppConfig) -> TestContext {
         response_events_template_url: "http://localhost/hsm/v1/requests/%s".to_string(),
     });
 
+    let rp_state = Arc::new(ReplayProtectionState {
+        nonce_port: Arc::new(MockNoncePort),
+        nonce_ttl_seconds: 600,
+    });
+
     TestContext {
-        app: web::router(state),
+        app: web::router(state, rp_state),
         sent_requests,
     }
 }
@@ -192,6 +213,23 @@ fn ok_state_init_response() -> StateInitResponse {
     }
 }
 
+/// Build a minimal fake JWS whose payload is an OuterRequest JSON containing a fresh nonce.
+/// The middleware decodes the payload without verifying the signature, so the signature
+/// bytes can be anything — tests only need a structurally valid compact JWS.
+fn build_test_outer_jws() -> String {
+    use base64::Engine;
+    use base64::engine::general_purpose::URL_SAFE_NO_PAD;
+    let header = URL_SAFE_NO_PAD.encode(r#"{"alg":"ES256","kid":"test-key"}"#);
+    let payload_json = serde_json::json!({
+        "version": 1,
+        "context": "hsm",
+        "nonce": "some_nonce"
+    });
+    let payload = URL_SAFE_NO_PAD.encode(serde_json::to_string(&payload_json).unwrap());
+    let sig = URL_SAFE_NO_PAD.encode(b"fakesig");
+    format!("{}.{}.{}", header, payload, sig)
+}
+
 async fn read_body_json(response: axum::response::Response) -> serde_json::Value {
     let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
         .await
@@ -209,7 +247,7 @@ async fn test_post_hsm_request_sends_to_kafka() {
 
     let body = serde_json::json!({
         "clientId": "test-client",
-        "outerRequestJws": "mock-outer-jws"
+        "outerRequestJws": build_test_outer_jws()
     });
 
     let response = ctx
@@ -241,7 +279,7 @@ async fn test_post_hsm_request_sync_returns_result() {
 
     let body = serde_json::json!({
         "clientId": "test-client",
-        "outerRequestJws": "mock-outer-jws"
+        "outerRequestJws": build_test_outer_jws()
     });
 
     let response = ctx
@@ -275,7 +313,7 @@ async fn test_post_hsm_request_sync_timeout_returns_pending() {
 
     let body = serde_json::json!({
         "clientId": "test-client",
-        "outerRequestJws": "mock-outer-jws"
+        "outerRequestJws": build_test_outer_jws()
     });
 
     let response = ctx
@@ -309,7 +347,7 @@ async fn test_post_hsm_request_missing_device_state() {
 
     let body = serde_json::json!({
         "clientId": "unknown-client",
-        "outerRequestJws": "mock-outer-jws"
+        "outerRequestJws": build_test_outer_jws()
     });
 
     let response = ctx
@@ -480,7 +518,7 @@ async fn test_post_legacy_operations_with_result_returns_jws_string() {
 
     let body = serde_json::json!({
         "clientId": "test-client",
-        "outerRequestJws": "mock-outer-jws"
+        "outerRequestJws": build_test_outer_jws()
     });
 
     let response = ctx
@@ -517,7 +555,7 @@ async fn test_post_legacy_operations_timeout_returns_408() {
 
     let body = serde_json::json!({
         "clientId": "test-client",
-        "outerRequestJws": "mock-outer-jws"
+        "outerRequestJws": build_test_outer_jws()
     });
 
     let response = ctx

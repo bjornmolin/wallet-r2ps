@@ -31,6 +31,7 @@ mod tests {
                 context: "hsm".to_string(),
                 inner_jwe: None, // Simplified for testing HSM ops
                 server_kid: None,
+                nonce: "test-nonce".to_string(),
             },
             inner_request,
             session_id: None,
@@ -99,7 +100,6 @@ mod tests {
         let inner_request = InnerRequest {
             version: 1,
             request_type: crate::domain::OperationId::HsmGenerateKey,
-            request_counter: 0,
             data: Some(serde_json::to_string(&payload).unwrap()),
         };
 
@@ -139,7 +139,6 @@ mod tests {
         let inner_request = InnerRequest {
             version: 1,
             request_type: crate::domain::OperationId::HsmSign,
-            request_counter: 0,
             data: Some(serde_json::to_string(&payload).unwrap()),
         };
 
@@ -168,7 +167,6 @@ mod tests {
         let inner_request = InnerRequest {
             version: 1,
             request_type: crate::domain::OperationId::HsmSign,
-            request_counter: 0,
             data: Some(serde_json::to_string(&payload).unwrap()),
         };
 
@@ -199,7 +197,6 @@ mod tests {
         let inner_request = InnerRequest {
             version: 1,
             request_type: crate::domain::OperationId::HsmSign,
-            request_counter: 0,
             data: Some(serde_json::to_string(&payload).unwrap()),
         };
 
@@ -223,7 +220,6 @@ mod tests {
         let inner_request = InnerRequest {
             version: 1,
             request_type: crate::domain::OperationId::HsmDeleteKey,
-            request_counter: 0,
             data: Some(serde_json::to_string(&payload).unwrap()),
         };
 
@@ -250,7 +246,6 @@ mod tests {
         let inner_request = InnerRequest {
             version: 1,
             request_type: crate::domain::OperationId::HsmDeleteKey,
-            request_counter: 0,
             data: Some(serde_json::to_string(&payload).unwrap()),
         };
 
@@ -272,7 +267,6 @@ mod tests {
         let inner_request = InnerRequest {
             version: 1,
             request_type: crate::domain::OperationId::HsmListKeys,
-            request_counter: 0,
             data: None,
         };
 
@@ -303,7 +297,6 @@ mod tests {
         let inner_request = InnerRequest {
             version: 1,
             request_type: crate::domain::OperationId::HsmListKeys,
-            request_counter: 0,
             data: None,
         };
 

@@ -17,7 +17,6 @@ mod tests {
         let inner_request = InnerRequest {
             version: 1,
             request_type: operation,
-            request_counter: 42,
             data: Some("test_data".to_string()),
         };
         serde_json::to_vec(&inner_request).unwrap()
@@ -30,6 +29,7 @@ mod tests {
             context: "hsm".to_string(),
             inner_jwe: jwe.map(TypedJwe::new),
             server_kid: None,
+            nonce: "test-nonce".to_string(),
         }
     }
 
@@ -186,7 +186,6 @@ mod tests {
         let inner_request = result.unwrap();
         assert_eq!(inner_request.request_type, operation);
         assert_eq!(inner_request.version, 1);
-        assert_eq!(inner_request.request_counter, 42);
     }
 
     fn dummy_ec_public_jwk() -> EcPublicJwk {

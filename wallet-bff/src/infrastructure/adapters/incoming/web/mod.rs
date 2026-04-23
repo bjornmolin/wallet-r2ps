@@ -3,14 +3,43 @@
 // SPDX-License-Identifier: EUPL-1.2
 
 pub mod handlers;
+pub mod replay_protection;
 
+use axum::Json;
 use axum::Router;
+use axum::http::{StatusCode, header};
+use axum::middleware;
+use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use std::sync::Arc;
 use utoipa::OpenApi;
 use utoipa_swagger_ui::SwaggerUi;
 
-use handlers::AppState;
+use crate::domain::ProblemDetail;
+
+use handlers::{AppState, PROBLEM_CONTENT_TYPE};
+use replay_protection::ReplayProtectionState;
+
+/// RFC 9457 Problem Details response with Content-Type: application/problem+json.
+pub(super) fn problem_response(
+    status: StatusCode,
+    title: &str,
+    detail: Option<&str>,
+    instance: &str,
+) -> Response {
+    let body = ProblemDetail {
+        problem_type: None,
+        title: title.to_string(),
+        status: status.as_u16(),
+        detail: detail.map(str::to_string),
+        instance: Some(instance.to_string()),
+    };
+    let mut response = (status, Json(body)).into_response();
+    response
+        .headers_mut()
+        .insert(header::CONTENT_TYPE, PROBLEM_CONTENT_TYPE.parse().unwrap());
+    response
+}
 
 #[derive(OpenApi)]
 #[openapi(
@@ -34,7 +63,7 @@ use handlers::AppState;
 )]
 struct ApiDoc;
 
-pub fn router(state: Arc<AppState>) -> Router {
+pub fn router(state: Arc<AppState>, rp_state: Arc<ReplayProtectionState>) -> Router {
     Router::new()
         .merge(SwaggerUi::new("/swagger-ui").url("/hsm/v1/openapi.json", ApiDoc::openapi()))
         .route(
@@ -44,5 +73,9 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/hsm/v1/requests", post(handlers::service))
         .route("/hsm/v1/operations", post(handlers::legacy_service))
         .route("/hsm/v1/device-states", post(handlers::create_state))
+        .layer(middleware::from_fn_with_state(
+            rp_state,
+            replay_protection::replay_protection,
+        ))
         .with_state(state)
 }
