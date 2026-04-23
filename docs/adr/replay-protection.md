@@ -28,7 +28,7 @@ Följande alternativ övervägdes och avvisades:
 
 - **Tidsstämpel (`issued_at`) vid sidan av nonce** – skulle stänga fönstret för replay efter Valkey TTL-utgång, men den extra komplexiteten (nytt fält i `OuterRequest`, ny konfigvariabel `REPLAY_WINDOW_SECONDS`, tidsstämpelvalidering i workern) bedömdes inte motiverad av hotbilden. Session-JWE-operationer skyddas redan av att den efemära sessionsnyckeln försvinner vid omstart; Device-JWE-operationer har ett reellt men begränsat fönster tack vare att OPAQUE är ett protokoll som utförs i två steg.
 
-- **Skydd för state-init** – `/hsm/v1/device-states` är work-in-progress och saknar i nuläget signerad payload och klientnyckel. Vi får återkomma till skydd av denna endpoint när vi vet hur den ska se ut. 
+- **Skydd för state-init** – `/hsm/v1/device-states` är work-in-progress och saknar i nuläget signerad payload och klientnyckel. Vi får återkomma till skydd av denna endpoint när vi vet hur den ska se ut.
 
 ## Konsekvenser av beslutet
 
