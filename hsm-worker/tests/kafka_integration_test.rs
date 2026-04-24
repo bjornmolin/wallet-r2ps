@@ -93,7 +93,7 @@ impl StateInitResponseSpiPort for CapturingStateInitResponseSink {
 // ── Producer tests ───────────────────────────────────────────────────────────
 
 #[tokio::test]
-#[ignore]
+#[cfg_attr(not(feature = "testcontainers"), ignore)]
 async fn test_worker_response_sender_produces_to_kafka() {
     let (_container, bootstrap) = start_kafka().await;
     let config = make_kafka_config(&bootstrap);
@@ -136,7 +136,7 @@ async fn test_worker_response_sender_produces_to_kafka() {
 }
 
 #[tokio::test]
-#[ignore]
+#[cfg_attr(not(feature = "testcontainers"), ignore)]
 async fn test_state_init_response_sender_produces_to_kafka() {
     let (_container, bootstrap) = start_kafka().await;
     let config = make_kafka_config(&bootstrap);
@@ -187,7 +187,7 @@ async fn test_state_init_response_sender_produces_to_kafka() {
 // ── Consumer tests ───────────────────────────────────────────────────────────
 
 #[tokio::test]
-#[ignore]
+#[cfg_attr(not(feature = "testcontainers"), ignore)]
 async fn test_worker_consumer_receives_and_calls_use_case() {
     let (_container, bootstrap) = start_kafka().await;
     let config = Arc::new(make_kafka_config(&bootstrap));
@@ -248,7 +248,7 @@ async fn test_worker_consumer_receives_and_calls_use_case() {
 }
 
 #[tokio::test]
-#[ignore]
+#[cfg_attr(not(feature = "testcontainers"), ignore)]
 async fn test_state_init_consumer_receives_and_processes() {
     let (_container, bootstrap) = start_kafka().await;
     let config = Arc::new(make_kafka_config(&bootstrap));
@@ -339,7 +339,7 @@ async fn test_state_init_consumer_receives_and_processes() {
 // ── Worker round-trip test ───────────────────────────────────────────────────
 
 #[tokio::test]
-#[ignore]
+#[cfg_attr(not(feature = "testcontainers"), ignore)]
 async fn test_worker_kafka_round_trip() {
     let (_container, bootstrap) = start_kafka().await;
     let config = Arc::new(make_kafka_config(&bootstrap));

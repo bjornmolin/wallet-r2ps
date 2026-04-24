@@ -27,6 +27,7 @@ path = "src/bin/digg_hsm_keytool.rs"
 
 [features]
 openapi = ["dep:utoipa", "hsm-common/openapi"]
+testcontainers = []
 
 [dependencies]
 hsm-common = { path = "../hsm-common" }
