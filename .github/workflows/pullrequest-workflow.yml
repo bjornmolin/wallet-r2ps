@@ -23,14 +23,14 @@ jobs:
   pr-checks:
     # SMOKE TEST: pinned to bjornmolin/reusable-ci feat/rust-first-class-support.
     # Switch to diggsweden/reusable-ci@<v2.8.0-sha> once the official tag is cut.
-    uses: bjornmolin/reusable-ci/.github/workflows/pullrequest-orchestrator.yml@733cecf5f599210a7ef80bad6fb5c8421430b4b4 # feat/rust-first-class-support
+    uses: bjornmolin/reusable-ci/.github/workflows/pullrequest-orchestrator.yml@f7ea33405a951a4a44684f84d4aff1caa586433b # feat/rust-first-class-support
     secrets: inherit
     permissions:
       contents: read # Clone repository and read source code
       packages: read # Access GitHub Packages
       security-events: write # Upload security scan results to Security tab
     with:
-      reusable-ci-ref: 733cecf5f599210a7ef80bad6fb5c8421430b4b4
+      reusable-ci-ref: f7ea33405a951a4a44684f84d4aff1caa586433b
       project-type: rust
       # Use devbase-check linting (replaces megalint, commitlint, licenselint)
       linters.devbasecheck: true
