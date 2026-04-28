@@ -1,0 +1,11 @@
+# SPDX-FileCopyrightText: 2025 diggsweden/wallet-r2ps
+#
+# SPDX-License-Identifier: CC0-1.0
+
+# Pinned toolchain for reproducible builds. Bumping the channel here is the
+# single point of change for CI (reusable-ci's build-rust.yml and lint-rust.yml
+# auto-detect this file) and local development (`rustup show` honours it).
+[toolchain]
+channel = "1.94"
+components = ["clippy", "rustfmt"]
+profile = "minimal"
