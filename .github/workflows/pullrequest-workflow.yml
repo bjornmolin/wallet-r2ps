@@ -21,14 +21,16 @@ concurrency:
 
 jobs:
   pr-checks:
-    uses: diggsweden/reusable-ci/.github/workflows/pullrequest-orchestrator.yml@0d87fcd4cd9550e50bfa1923b98afbed80708325 # v2.7.9
+    # SMOKE TEST: pinned to bjornmolin/reusable-ci feat/rust-first-class-support.
+    # Switch to diggsweden/reusable-ci@<v2.8.0-sha> once the official tag is cut.
+    uses: bjornmolin/reusable-ci/.github/workflows/pullrequest-orchestrator.yml@8e219e46f263bdc30a1f092be28cc196345cf147 # feat/rust-first-class-support
     secrets: inherit
     permissions:
       contents: read # Clone repository and read source code
       packages: read # Access GitHub Packages
       security-events: write # Upload security scan results to Security tab
     with:
-      reusable-ci-ref: v2.7.9
+      reusable-ci-ref: 8e219e46f263bdc30a1f092be28cc196345cf147
       project-type: rust
       # Use devbase-check linting (replaces megalint, commitlint, licenselint)
       linters.devbasecheck: true
@@ -36,6 +38,12 @@ jobs:
       linters.commitlint: false
       linters.licenselint: false
       linters.dependencyreview: true
+      # Rust quality gates (provided by reusable-ci v2.8.0)
+      linters.clippy: true
+      linters.rustfmt: true
+      linters.cargoaudit: true
+      # Native deps required for clippy to compile the workspace
+      rust.apt-packages: "cmake libsasl2-dev libzstd-dev libssl-dev pkg-config zlib1g-dev"
 
   test:
     permissions:

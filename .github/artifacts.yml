@@ -10,11 +10,23 @@ artifacts:
     project-type: rust
     working-directory: ./hsm-worker
     build-type: application
+    config:
+      # Native build dependencies (rdkafka, openssl, ...) installed before
+      # `cargo build --release` runs in build-rust.yml.
+      apt-packages: "cmake libsasl2-dev libzstd-dev libssl-dev pkg-config zlib1g-dev"
+      # Workspace-level tests (with testcontainers features) run separately
+      # via .github/workflows/test.yml from pullrequest-workflow.yml. Per-
+      # artefact tests would re-run the full workspace twice and miss the
+      # required features.
+      skip-tests: true
 
   - name: wallet-bff
     project-type: rust
     working-directory: ./wallet-bff
     build-type: application
+    config:
+      apt-packages: "cmake libsasl2-dev libzstd-dev libssl-dev pkg-config zlib1g-dev"
+      skip-tests: true
 
 containers:
   - name: hsm-worker

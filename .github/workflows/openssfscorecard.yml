@@ -24,6 +24,8 @@ jobs:
       contents: read
       security-events: write
       id-token: write
-    uses: diggsweden/reusable-ci/.github/workflows/security-openssf-scorecard.yml@0d87fcd4cd9550e50bfa1923b98afbed80708325 # v2.7.9
+    # SMOKE TEST: pinned to bjornmolin/reusable-ci feat/rust-first-class-support.
+    # Switch to diggsweden/reusable-ci@<v2.8.0-sha> once the official tag is cut.
+    uses: bjornmolin/reusable-ci/.github/workflows/security-openssf-scorecard.yml@8e219e46f263bdc30a1f092be28cc196345cf147 # feat/rust-first-class-support
     with:
       publish-results: true
