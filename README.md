@@ -119,5 +119,6 @@ make logs
 
 ### Endpoints
 
-* [Demo java klienten](http://localhost:9000/rhsm-client/)
 * [Kafka UI](http://localhost:8080)
+
+
