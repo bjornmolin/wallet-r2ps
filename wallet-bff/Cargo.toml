@@ -4,7 +4,7 @@
 
 [package]
 name = "wallet-bff"
-version = "0.1.2"
+version = "0.1.3"
 edition = "2024"
 
 [[bin]]

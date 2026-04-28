@@ -5,6 +5,28 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.3] - 2026-04-28
+
+### Added
+
+- Add ADR for request-response routing, startup/shutdown improvements
+
+### Changed
+
+- Wip
+- Env-driven init-kafka script, rename r2ps topics
+- Decouple topic lifecycle, remove BFF admin rights
+- Topic lifecycle improvements
+- Per-instance Kafka response topics
+
+### Fixed
+
+- Rename conf
+- Generate unique nonce per pake request
+- Housekeeping
+- Update integration tests for per-instance response topics
+
+
 ## [0.1.2] - 2026-04-28
 
 ### Changed
@@ -254,6 +276,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Remove old code and improve readme
 - Remove never-changed data from R2psResponse
 
+[0.1.3]: https://github.com/bjornmolin/wallet-r2ps/compare/v0.1.2..v0.1.3
 [0.1.2]: https://github.com/bjornmolin/wallet-r2ps/compare/v0.1.1..v0.1.2
 [0.1.1]: https://github.com/bjornmolin/wallet-r2ps/compare/v0.0.5..v0.1.1
 [0.0.5]: https://github.com/bjornmolin/wallet-r2ps/compare/v0.0.4..v0.0.5

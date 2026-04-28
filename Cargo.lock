@@ -1379,7 +1379,7 @@ dependencies = [
 
 [[package]]
 name = "hsm-common"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "base64 0.22.1",
  "hex",
@@ -1394,7 +1394,7 @@ dependencies = [
 
 [[package]]
 name = "hsm-worker"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "argon2",
  "base64 0.22.1",
@@ -1758,7 +1758,7 @@ dependencies = [
 
 [[package]]
 name = "integration-load-tests"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
@@ -4220,7 +4220,7 @@ dependencies = [
 
 [[package]]
 name = "wallet-bff"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "async-trait",
  "axum",
