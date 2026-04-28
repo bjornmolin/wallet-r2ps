@@ -26,8 +26,8 @@ jobs:
       packages: write # Push dev images to ghcr.io
     # SMOKE TEST: pinned to bjornmolin/reusable-ci feat/rust-first-class-support.
     # Switch to diggsweden/reusable-ci@<v2.8.0-sha> once the official tag is cut.
-    uses: bjornmolin/reusable-ci/.github/workflows/release-dev-orchestrator.yml@8e219e46f263bdc30a1f092be28cc196345cf147 # feat/rust-first-class-support
+    uses: bjornmolin/reusable-ci/.github/workflows/release-dev-orchestrator.yml@6c98d46fdb960bc23042e282f42fcfd2f3c54ccf # feat/rust-first-class-support
     with:
-      reusable-ci-ref: 8e219e46f263bdc30a1f092be28cc196345cf147
+      reusable-ci-ref: 6c98d46fdb960bc23042e282f42fcfd2f3c54ccf
       project-type: rust
     secrets: inherit
