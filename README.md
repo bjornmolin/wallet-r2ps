@@ -120,5 +120,3 @@ make logs
 ### Endpoints
 
 * [Kafka UI](http://localhost:8080)
-
-
