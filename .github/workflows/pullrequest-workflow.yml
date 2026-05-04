@@ -21,29 +21,23 @@ concurrency:
 
 jobs:
   pr-checks:
-    # SMOKE TEST: pinned to bjornmolin/reusable-ci feat/rust-first-class-support.
-    # Switch to diggsweden/reusable-ci@<v2.8.0-sha> once the official tag is cut.
-    uses: bjornmolin/reusable-ci/.github/workflows/pullrequest-orchestrator.yml@2b4e2a2cd474933296a3d4b9fe853b4f66203e47 # feat/rust-first-class-support
+    uses: diggsweden/reusable-ci/.github/workflows/pullrequest-orchestrator.yml@4113becb930aa8ee43e456256e703caf9f86b633 # v2.8.1
     secrets: inherit
     permissions:
       contents: read # Clone repository and read source code
       packages: read # Access GitHub Packages
       security-events: write # Upload security scan results to Security tab
     with:
-      reusable-ci-ref: 2b4e2a2cd474933296a3d4b9fe853b4f66203e47
-      project-type: rust
+      reusable-ci-ref: 4113becb930aa8ee43e456256e703caf9f86b633
+      project-type: cargo
       # Use devbase-check linting (replaces megalint, commitlint, licenselint)
       linters.devbasecheck: true
       linters.megalint: false
       linters.commitlint: false
       linters.licenselint: false
       linters.dependencyreview: true
-      # Rust quality gates (provided by reusable-ci v2.8.0)
-      linters.clippy: true
-      linters.rustfmt: true
-      linters.cargoaudit: true
-      # Native deps required for clippy to compile the workspace
-      rust.apt-packages: "cmake libsasl2-dev libzstd-dev libssl-dev pkg-config zlib1g-dev"
+      # Rust quality gates run via devbase-check's lint-rust*/rust-audit
+      # recipes (see justfile), invoked through linters.devbasecheck above.
 
   test:
     permissions:

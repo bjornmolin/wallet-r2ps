@@ -24,10 +24,15 @@ jobs:
     permissions:
       contents: read # Read code for building
       packages: write # Push dev images to ghcr.io
-    # SMOKE TEST: pinned to bjornmolin/reusable-ci feat/rust-first-class-support.
-    # Switch to diggsweden/reusable-ci@<v2.8.0-sha> once the official tag is cut.
-    uses: bjornmolin/reusable-ci/.github/workflows/release-dev-orchestrator.yml@2b4e2a2cd474933296a3d4b9fe853b4f66203e47 # feat/rust-first-class-support
+    uses: diggsweden/reusable-ci/.github/workflows/release-dev-orchestrator.yml@4113becb930aa8ee43e456256e703caf9f86b633 # v2.8.1
     with:
-      reusable-ci-ref: 2b4e2a2cd474933296a3d4b9fe853b4f66203e47
-      project-type: rust
+      reusable-ci-ref: 4113becb930aa8ee43e456256e703caf9f86b633
+      project-type: cargo
+      # artifacts-config opts into the multi-container dev release path:
+      # one job per container in the same dev run, parallel matrix.
+      # Both hsm-worker and wallet-bff are built each time this workflow
+      # is dispatched.
+      artifacts-config: .github/artifacts.yml
+      # SBOM coverage covered by wallet-backend-reference's dev runs.
+      # Keep r2ps on the default `none` for faster dev feedback.
     secrets: inherit
